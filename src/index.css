@@ -1,0 +1,274 @@
+@import "tailwindcss";
+
+@layer utilities {
+  /* Chinese Font Families */
+  .font-cjk-print-sc {
+    font-family: 'Noto Serif SC', 'Songti SC', 'SimSun', serif;
+  }
+  .font-cjk-sans-sc {
+    font-family: 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  }
+  .font-cjk-xiaowei {
+    font-family: 'ZCOOL XiaoWei', 'Songti SC', serif;
+  }
+  .font-cjk-cursive-mashan {
+    font-family: 'Ma Shan Zheng', 'KaiTi', 'STKaiti', cursive, serif;
+  }
+  .font-cjk-cursive-zhimang {
+    font-family: 'Zhi Mang Xing', 'STXingkai', cursive, serif;
+  }
+  .font-cjk-cursive-longcang {
+    font-family: 'Long Cang', cursive, serif;
+  }
+  .font-cjk-cursive-liujian {
+    font-family: 'Liu Jian Mao Cao', cursive, serif;
+  }
+
+  /* Korean Font Families */
+  .font-kr-print-serif {
+    font-family: 'Noto Serif KR', 'Batang', serif;
+  }
+  .font-kr-print-gowun {
+    font-family: 'Gowun Batang', 'Batang', serif;
+  }
+  .font-kr-print-songmyung {
+    font-family: 'Song Myung', 'Batang', serif;
+  }
+  .font-kr-print-sans {
+    font-family: 'Noto Sans KR', 'Malgun Gothic', sans-serif;
+  }
+  .font-kr-cursive-brush {
+    font-family: 'Nanum Brush Script', 'Gungsuh', cursive;
+  }
+  .font-kr-cursive-pen {
+    font-family: 'Nanum Pen Script', cursive;
+  }
+  .font-kr-cursive-yeonsung {
+    font-family: 'Yeon Sung', cursive;
+  }
+  .font-kr-cursive-dongle {
+    font-family: 'Dongle', sans-serif;
+  }
+  .font-kr-cursive-gaegu {
+    font-family: 'Gaegu', cursive;
+  }
+
+  /* Writing Modes */
+  .vertical-writing-upright {
+    writing-mode: vertical-rl;
+    text-orientation: upright;
+  }
+  .vertical-writing-mixed {
+    writing-mode: vertical-rl;
+    text-orientation: mixed;
+  }
+  .horizontal-writing {
+    writing-mode: horizontal-tb;
+  }
+
+  /* Tate-chu-yoko for numbers in vertical text */
+  .tatechuyoko {
+    text-combine-upright: all;
+    -webkit-text-combine: horizontal;
+  }
+
+  /* CJK Text Emphasis Marks (着重号) */
+  .cjk-emphasis-dot {
+    text-emphasis: filled circle;
+    -webkit-text-emphasis: filled circle;
+    text-emphasis-position: under right;
+    -webkit-text-emphasis-position: under right;
+  }
+}
+
+/* ContentEditable Empty Placeholder */
+[contenteditable]:empty::before {
+  content: attr(data-placeholder);
+  color: #a8a29e;
+  pointer-events: none;
+  font-size: 0.85em;
+  opacity: 0.7;
+  font-style: italic;
+}
+
+/* Authentic, clean CJK Ruby Typography */
+ruby {
+  display: inline-ruby;
+  ruby-align: center;
+  ruby-position: over;
+  margin: 0 0.1em;
+  line-height: 1;
+}
+
+rt {
+  display: ruby-text;
+  font-size: 0.48em;
+  line-height: 1.1;
+  text-align: center;
+  font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  font-weight: 500;
+  color: #57534e;
+  user-select: none;
+  letter-spacing: 0.02em;
+}
+
+/* In Vertical Writing Mode (竖排 / 세로쓰기) */
+.vertical-writing-upright ruby,
+.vertical-writing-mixed ruby {
+  display: inline-ruby;
+  ruby-position: over;
+  margin: 0.12em 0;
+}
+
+.vertical-writing-upright rt,
+.vertical-writing-mixed rt {
+  display: ruby-text;
+  font-size: 0.44em;
+  line-height: 1.1;
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+  color: #57534e;
+  margin-left: 3px;
+  user-select: none;
+}
+
+/* Manuscript Grid Patterns - Crisp, mathematically aligned SVG patterns (zero raster artifacts in html2canvas) */
+
+/* Korean Wongozhi (원고지 - Authentic Sage Green Traditional Manuscript Grid, 40x40px) */
+.pattern-wongozhi {
+  background-size: 40px 40px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='40'%3E%3Crect x='0.5' y='0.5' width='39' height='39' fill='none' stroke='%2315803D' stroke-width='1.2'/%3E%3C/svg%3E");
+}
+
+/* Korean Wongozhi Brick / Terracotta (원고지 - 황토/적갈색, 40x40px) */
+.pattern-wongozhi-brick {
+  background-size: 40px 40px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='40'%3E%3Crect x='0.5' y='0.5' width='39' height='39' fill='none' stroke='%23B45309' stroke-width='1.2'/%3E%3C/svg%3E");
+}
+
+/* Classical Chinese Vertical Red Lines (竖排朱丝栏 · Vermilion/cinnabar columns, 48px) */
+.pattern-classical-vertical {
+  background-size: 48px 100%;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='48' height='100'%3E%3Cline x1='0' y1='0' x2='0' y2='100' stroke='%23B91C1C' stroke-width='1.6'/%3E%3C/svg%3E");
+}
+
+/* Classical Chinese Vertical Slate / Black Ink Lines (竖排乌丝栏 · Dark ink stone columns, 48px) */
+.pattern-classical-vertical-slate {
+  background-size: 48px 100%;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='48' height='100'%3E%3Cline x1='0' y1='0' x2='0' y2='100' stroke='%231E293B' stroke-width='1.6'/%3E%3C/svg%3E");
+}
+
+/* Tianzige 田字格 (Chinese field practice grid with bold outer square and dashed center cross +, 44x44px) */
+.pattern-tianzige {
+  background-size: 44px 44px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='44' height='44'%3E%3Crect x='0.5' y='0.5' width='43' height='43' fill='none' stroke='%23C62828' stroke-width='1.3'/%3E%3Cline x1='0' y1='22' x2='44' y2='22' stroke='%23EF5350' stroke-width='1' stroke-dasharray='3%2C3'/%3E%3Cline x1='22' y1='0' x2='22' y2='44' stroke='%23EF5350' stroke-width='1' stroke-dasharray='3%2C3'/%3E%3C/svg%3E");
+}
+
+/* Mizige 米字格 (Star grid with outer square, center cross +, and 8-direction diagonal lines X, 44x44px) */
+.pattern-mizige {
+  background-size: 44px 44px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='44' height='44'%3E%3Crect x='0.5' y='0.5' width='43' height='43' fill='none' stroke='%23991B1B' stroke-width='1.3'/%3E%3Cline x1='0' y1='22' x2='44' y2='22' stroke='%23DC2626' stroke-width='1' stroke-dasharray='3%2C3'/%3E%3Cline x1='22' y1='0' x2='22' y2='44' stroke='%23DC2626' stroke-width='1' stroke-dasharray='3%2C3'/%3E%3Cline x1='0' y1='0' x2='44' y2='44' stroke='%23F87171' stroke-width='0.9' stroke-dasharray='2.5%2C2.5'/%3E%3Cline x1='44' y1='0' x2='0' y2='44' stroke='%23F87171' stroke-width='0.9' stroke-dasharray='2.5%2C2.5'/%3E%3C/svg%3E");
+}
+
+/* Jiugongge 九宫格 (Nine-palace grid with 3x3 internal partition lines, 48x48px) */
+.pattern-jiugongge {
+  background-size: 48px 48px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='48' height='48'%3E%3Crect x='0.5' y='0.5' width='47' height='47' fill='none' stroke='%231E293B' stroke-width='1.3'/%3E%3Cline x1='16' y1='0' x2='16' y2='48' stroke='%23475569' stroke-width='1' stroke-dasharray='3%2C2'/%3E%3Cline x1='32' y1='0' x2='32' y2='48' stroke='%23475569' stroke-width='1' stroke-dasharray='3%2C2'/%3E%3Cline x1='0' y1='16' x2='48' y2='16' stroke='%23475569' stroke-width='1' stroke-dasharray='3%2C2'/%3E%3Cline x1='0' y1='32' x2='48' y2='32' stroke='%23475569' stroke-width='1' stroke-dasharray='3%2C2'/%3E%3C/svg%3E");
+}
+
+/* Huigongge 回宫格 (Double-frame nested concentric square grid, 44x44px) */
+.pattern-huigongge {
+  background-size: 44px 44px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='44' height='44'%3E%3Crect x='0.5' y='0.5' width='43' height='43' fill='none' stroke='%231D4ED8' stroke-width='1.3'/%3E%3Crect x='10.5' y='10.5' width='23' height='23' fill='none' stroke='%2338BDF8' stroke-width='1.1' stroke-dasharray='3%2C2'/%3E%3C/svg%3E");
+}
+
+/* Quadretti Standard 5mm (Quaderno classico 5mm, 24x24px) */
+.pattern-quadretti-5mm {
+  background-size: 24px 24px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24'%3E%3Crect x='0.5' y='0.5' width='23' height='23' fill='none' stroke='%2360A5FA' stroke-width='0.9' opacity='0.75'/%3E%3C/svg%3E");
+}
+
+/* Quadretti Grandi 10mm (Quaderno scuola elementare 1cm, 48x48px) */
+.pattern-quadretti-10mm {
+  background-size: 48px 48px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='48' height='48'%3E%3Crect x='0.5' y='0.5' width='47' height='47' fill='none' stroke='%232563EB' stroke-width='1.2' opacity='0.85'/%3E%3C/svg%3E");
+}
+
+/* Classical Horizontal Lined Paper (Ruled notebook, 36px) */
+.pattern-classical-horizontal {
+  background-size: 100% 36px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='100' height='36'%3E%3Cline x1='0' y1='36' x2='100' y2='36' stroke='%23475569' stroke-width='1'/%3E%3C/svg%3E");
+}
+
+/* Xuan Paper / Hanji Texture Effect - Minimal and Clean */
+.bg-xuan-paper {
+  background-color: #fdfbf7;
+}
+
+.bg-hanji-paper {
+  background-color: #faf8f2;
+}
+
+/* Responsive Image & Artwork Handling - Anti-cropping */
+.clearfix::after {
+  content: "";
+  clear: both;
+  display: table;
+}
+
+.print-page img {
+  max-width: 100% !important;
+  height: auto;
+  object-fit: contain;
+  display: block;
+}
+
+/* In vertical writing mode, ensure images preserve normal upright orientation */
+.vertical-writing-upright img,
+.vertical-writing-mixed img {
+  writing-mode: horizontal-tb;
+  text-orientation: mixed;
+  max-width: 100% !important;
+  max-height: 480px;
+}
+
+/* Printable PDF Output Styles */
+@media print {
+  body {
+    background-color: #ffffff !important;
+    color: #000000 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  .no-print {
+    display: none !important;
+  }
+
+  .print-area {
+    width: 100% !important;
+    max-width: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    box-shadow: none !important;
+    border: none !important;
+    border-radius: 0 !important;
+    overflow: visible !important;
+  }
+
+  .print-page {
+    box-shadow: none !important;
+    border: none !important;
+    border-radius: 0 !important;
+    margin: 0 auto !important;
+    page-break-after: always;
+    break-after: page;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  @page {
+    margin: 0;
+    size: auto;
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "name": "CJK Scribe - Editor PDF Cinese & Coreano",
+  "description": "Editor avanzato e autonomo per creare ed esportare PDF in lingua cinese e coreana con layout verticale, caratteri speciali, pinyin, font corsivi e stampatello, tabelle e sigilli tradizionali.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
