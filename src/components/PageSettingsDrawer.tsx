@@ -334,99 +334,64 @@ export const PageSettingsDrawer: React.FC<PageSettingsDrawerProps> = ({
               </div>
             )}
 
-            {/* Interlinea */}
-            <div className="space-y-1.5 pt-1">
-              <div className="flex items-center justify-between">
-                <span className="text-stone-700 font-medium">Interlinea (Line Spacing):</span>
-                <span className="font-mono text-amber-950 font-bold px-1.5 py-0.5 bg-amber-100 rounded text-xs">
-                  {doc.lineSpacing.toFixed(2)}
-                </span>
-              </div>
-              <input
-                type="range"
-                min={1.0}
-                max={3.5}
-                step={0.05}
-                value={doc.lineSpacing}
-                onChange={(e) => onLineSpacingChange(parseFloat(e.target.value), true)}
-                className="w-full accent-amber-800 cursor-pointer"
-              />
-              <div className="flex items-center justify-between gap-1 pt-0.5">
-                {[1.0, 1.2, 1.5, 1.8, 2.0, 2.5].map((lh) => (
-                  <button
-                    key={lh}
-                    type="button"
-                    onClick={() => onLineSpacingChange(lh, true)}
-                    className={`px-1.5 py-0.5 rounded text-[10px] font-semibold border ${
-                      Math.abs(doc.lineSpacing - lh) < 0.05
-                        ? 'bg-amber-800 text-white border-amber-800'
-                        : 'bg-white text-stone-600 border-stone-200 hover:bg-stone-100'
-                    }`}
-                  >
-                    {lh}x
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Spaziatura Caratteri */}
-            <div className="space-y-1.5 pt-2 border-t border-stone-200">
-              <div className="flex items-center justify-between">
-                <span className="text-stone-700 font-medium">Spaziatura Caratteri (Letter Spacing):</span>
-                <span className="font-mono text-amber-950 font-bold px-1.5 py-0.5 bg-amber-100 rounded text-xs">
-                  {(doc.characterSpacing ?? 0.04).toFixed(2)} em
-                </span>
-              </div>
-              <input
-                type="range"
-                min={0}
-                max={0.5}
-                step={0.02}
-                value={doc.characterSpacing ?? 0.04}
-                onChange={(e) => onCharacterSpacingChange(parseFloat(e.target.value), true)}
-                className="w-full accent-amber-800 cursor-pointer"
-              />
-              <div className="flex items-center justify-between gap-1 pt-0.5">
-                {[
-                  { label: '0 Standard', val: 0 },
-                  { label: '+0.04 Media', val: 0.04 },
-                  { label: '+0.08 Larga', val: 0.08 },
-                  { label: '+0.15 Ampia', val: 0.15 },
-                ].map((sp) => (
-                  <button
-                    key={sp.label}
-                    type="button"
-                    onClick={() => onCharacterSpacingChange(sp.val, true)}
-                    className={`px-1.5 py-0.5 rounded text-[10px] font-semibold border ${
-                      Math.abs((doc.characterSpacing ?? 0.04) - sp.val) < 0.02
-                        ? 'bg-amber-800 text-white border-amber-800'
-                        : 'bg-white text-stone-600 border-stone-200 hover:bg-stone-100'
-                    }`}
-                  >
-                    {sp.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {hasGrid && (
-              <div className="p-3 bg-amber-50/80 rounded-xl border border-amber-200/80 space-y-2 mt-2">
+            {hasGrid ? (
+              <div className="p-3 bg-amber-50/80 rounded-xl border border-amber-200/80 space-y-2">
                 <div className="flex items-center gap-1.5 font-bold text-amber-950 text-xs">
                   <Sparkles className="w-3.5 h-3.5 text-amber-800" />
-                  <span>Allineamento Automatico alla Griglia</span>
+                  <span>Sincronizzazione Griglia Attiva</span>
                 </div>
                 <p className="text-[11px] text-stone-600 leading-relaxed">
-                  Calcola e applica istantaneamente il passo e la spaziatura geometricamente ideali per centrare ogni carattere nei riquadri del foglio.
+                  Su questa carta con quadretti o righe, ogni carattere è calibrato con precisione geometrica al passo della cella per rimanere esattamente centrato nei quadretti o tra le righe.
                 </p>
                 <button
                   type="button"
                   onClick={onAlignTextToGrid}
                   className="w-full py-2 px-3 bg-amber-800 hover:bg-amber-900 text-white rounded-lg font-bold text-xs flex items-center justify-center gap-1.5 shadow-2xs transition-colors"
                 >
-                  <Sparkles className="w-3.5 h-3.5" />
+                  <Sparkles className="w-3 h-3" />
                   <span>Centra & Allinea Testo alla Griglia</span>
                 </button>
               </div>
+            ) : (
+              <>
+                {/* Interlinea */}
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-stone-700 font-medium">Interlinea (Line Spacing):</span>
+                    <span className="font-mono text-amber-950 font-bold px-1.5 py-0.5 bg-amber-100 rounded text-xs">
+                      {doc.lineSpacing.toFixed(2)}
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min={1.2}
+                    max={3.5}
+                    step={0.05}
+                    value={doc.lineSpacing}
+                    onChange={(e) => onLineSpacingChange(parseFloat(e.target.value), true)}
+                    className="w-full accent-amber-800 cursor-pointer"
+                  />
+                </div>
+
+                {/* Spaziatura Caratteri */}
+                <div className="space-y-1.5 pt-2 border-t border-stone-200">
+                  <div className="flex items-center justify-between">
+                    <span className="text-stone-700 font-medium">Spaziatura Caratteri (Letter Spacing):</span>
+                    <span className="font-mono text-amber-950 font-bold px-1.5 py-0.5 bg-amber-100 rounded text-xs">
+                      {(doc.characterSpacing ?? 0.15).toFixed(2)} em
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min={0}
+                    max={0.5}
+                    step={0.02}
+                    value={doc.characterSpacing ?? 0.15}
+                    onChange={(e) => onCharacterSpacingChange(parseFloat(e.target.value), true)}
+                    className="w-full accent-amber-800 cursor-pointer"
+                  />
+                </div>
+              </>
             )}
           </section>
 

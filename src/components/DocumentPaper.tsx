@@ -42,7 +42,6 @@ import {
   getBlockExactGridStyle,
 } from '../utils/gridAlignment';
 import { EditableBlock } from './EditableBlock';
-import { PaperGridSvg } from './PaperGridSvg';
 
 interface DocumentPaperProps {
   document: CJKDocument;
@@ -190,6 +189,8 @@ export const DocumentPaper: React.FC<DocumentPaperProps> = ({
     const blockFontSize = block.fontSize || doc.defaultFontSize;
     const blockColor = block.color || doc.primaryColor;
     const blockAlign = block.textAlign || 'left';
+    const blockLineHeight = block.lineHeight || doc.lineSpacing;
+    const blockLetterSpacing = `${block.letterSpacing ?? doc.characterSpacing}em`;
 
     const gridStyle = getBlockExactGridStyle(
       doc.paperStyle,
@@ -199,46 +200,31 @@ export const DocumentPaper: React.FC<DocumentPaperProps> = ({
     );
     const isGridPaper = gridStyle.isGridPaper;
 
-    const isAutoGrid = doc.autoGridAlign !== false;
-    const isNotebookPaper =
-      doc.paperStyle === 'quadretti-5mm' ||
-      doc.paperStyle === 'quadretti-10mm' ||
-      doc.paperStyle === 'classical-horizontal';
-
     const hasRuby = block.content?.includes('<ruby>');
-
-    // Font size: prioritize block's explicit fontSize, then doc.defaultFontSize, then grid recommendation
-    const effectiveFontSize = block.fontSize || doc.defaultFontSize || (isGridPaper ? gridStyle.fontSize : 20);
-
-    // Line height: if block has lineHeight, use it; else if doc has lineSpacing, use it; else gridStyle
-    const effectiveLineHeight = block.lineHeight !== undefined
-      ? block.lineHeight
-      : isAutoGrid && isGridPaper
-      ? gridStyle.lineHeight
-      : (hasRuby ? Math.max(doc.lineSpacing || 1.8, 1.8) : (doc.lineSpacing || 1.75));
-
-    // Letter spacing: if block has letterSpacing, use it; else if doc has characterSpacing, use it; else gridStyle
-    const effectiveLetterSpacing = block.letterSpacing !== undefined
-      ? `${block.letterSpacing}em`
-      : isAutoGrid && isGridPaper && !isNotebookPaper
-      ? gridStyle.letterSpacing
-      : `${doc.characterSpacing ?? 0.04}em`;
+    const effectiveLineHeight = hasRuby
+      ? Math.max(blockLineHeight, 1.8)
+      : blockLineHeight;
 
     const blockTextAlign = isVertical
       ? 'left'
       : (isGridPaper && blockAlign === 'center' ? 'left' : blockAlign);
 
+    const isNotebookPaper =
+      doc.paperStyle === 'quadretti-5mm' ||
+      doc.paperStyle === 'quadretti-10mm' ||
+      doc.paperStyle === 'classical-horizontal';
+
     const commonStyle: React.CSSProperties = isGridPaper
       ? {
           fontFamily: blockFont,
-          fontSize: `${effectiveFontSize}px`,
+          fontSize: `${gridStyle.fontSize}px`,
           color: blockColor,
           textAlign: blockTextAlign,
-          lineHeight: effectiveLineHeight,
-          letterSpacing: effectiveLetterSpacing,
-          paddingLeft: isAutoGrid && !isNotebookPaper ? (gridStyle.paddingLeft || '0px') : '0px',
-          paddingTop: isAutoGrid && !isNotebookPaper ? (gridStyle.paddingTop || '0px') : '0px',
-          paddingRight: '0px',
+          lineHeight: gridStyle.lineHeight,
+          letterSpacing: gridStyle.letterSpacing,
+          paddingLeft: gridStyle.paddingLeft || '0px',
+          paddingTop: gridStyle.paddingTop || '0px',
+          paddingRight: gridStyle.paddingRight || '0px',
           paddingBottom: '0px',
           margin: '0px',
           minHeight: `${gridStyle.pitch || 44}px`,
@@ -251,18 +237,20 @@ export const DocumentPaper: React.FC<DocumentPaperProps> = ({
         }
       : {
           fontFamily: blockFont,
-          fontSize: `${effectiveFontSize}px`,
+          fontSize: `${blockFontSize}px`,
           color: blockColor,
           textAlign: blockAlign,
           lineHeight: effectiveLineHeight,
-          letterSpacing: effectiveLetterSpacing,
+          letterSpacing: `${block.letterSpacing ?? doc.characterSpacing}em`,
           fontWeight: block.fontWeight || 'normal',
           fontStyle: block.fontStyle || 'normal',
         };
 
     switch (block.type) {
       case 'heading1': {
-        const h1FontSize = block.fontSize || (isGridPaper ? Math.min(48, Math.round(effectiveFontSize * 1.5)) : Math.round(doc.defaultFontSize * 1.5));
+        const h1FontSize = isGridPaper
+          ? gridStyle.fontSize
+          : block.fontSize || Math.round(doc.defaultFontSize * 1.5);
         return (
           <EditableBlock
             blockId={block.id}
@@ -284,7 +272,9 @@ export const DocumentPaper: React.FC<DocumentPaperProps> = ({
       }
 
       case 'heading2': {
-        const h2FontSize = block.fontSize || (isGridPaper ? Math.min(36, Math.round(effectiveFontSize * 1.15)) : Math.round(doc.defaultFontSize * 1.15));
+        const h2FontSize = isGridPaper
+          ? gridStyle.fontSize
+          : block.fontSize || Math.round(doc.defaultFontSize * 1.15);
         return (
           <EditableBlock
             blockId={block.id}
@@ -1122,13 +1112,16 @@ export const DocumentPaper: React.FC<DocumentPaperProps> = ({
 
               {/* Main Content Area & Synced Grid Pattern */}
               <div className="relative flex-1 w-full min-h-[500px]">
-                {/* Vector SVG Grid Pattern Overlay - 100% exact rendering on screen and in PDF */}
-                <PaperGridSvg
-                  paperStyle={doc.paperStyle}
-                  opacity={doc.gridOpacity ?? 0.55}
-                  writingMode={doc.writingMode}
-                  pageId={page.id}
-                />
+                {/* Grid / Ruled Lines Overlay strictly bounded within the content container */}
+                {getPatternClass() && (
+                  <div
+                    className={`grid-pattern-overlay absolute inset-0 pointer-events-none transition-opacity ${getPatternClass()}`}
+                    style={{
+                      opacity: doc.gridOpacity ?? 0.55,
+                      backgroundPosition: isVertical ? 'right top' : 'left top',
+                    }}
+                  />
+                )}
 
                 {/* Traditional Outer Border */}
                 {(doc.paperStyle === 'wongozhi' ||

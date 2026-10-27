@@ -20,10 +20,7 @@ import {
   isCursiveFont,
 } from '../utils/gridAlignment';
 
-const COMMON_FONT_SIZES = [
-  10, 11, 12, 13, 14, 15, 16, 17, 18, 20, 22, 24, 26, 28, 30, 32, 36, 40, 44, 48, 56, 64, 72,
-];
-const QUICK_FONT_SIZES = [14, 18, 22, 26, 32, 40];
+const COMMON_FONT_SIZES = [12, 14, 16, 18, 20, 22, 24, 26, 28, 32, 36, 40, 48, 56, 72];
 import {
   AlignLeft,
   AlignCenter,
@@ -140,7 +137,6 @@ export const FormatToolbar: React.FC<FormatToolbarProps> = ({
   const [showColorPopover, setShowColorPopover] = useState(false);
   const [showListDropdown, setShowListDropdown] = useState(false);
   const [mobileTab, setMobileTab] = useState<'font' | 'paper' | 'insert' | 'actions'>('font');
-  const [alignedFeedback, setAlignedFeedback] = useState(false);
 
   const isTableActive = activeBlockType === 'table';
 
@@ -455,75 +451,42 @@ export const FormatToolbar: React.FC<FormatToolbarProps> = ({
             </select>
           </div>
 
-          {/* Font Size & Steppers (Prominently Highlighted Active Size + Steppers + Quick Presets) */}
-          <div className="flex items-center gap-1.5 flex-wrap">
-            <span className="text-stone-500 font-medium text-xs">
+          {/* Font Size & Steppers (Works for selected text, paragraphs, headings AND tables!) */}
+          <div className="flex items-center gap-1">
+            <span className="text-stone-400 font-medium">
               {isTableActive ? 'Font Tabella:' : 'Dim:'}
             </span>
-
-            {/* Prominently Highlighted Active Font Size Badge with Steppers */}
-            <div className="flex items-center gap-0.5 bg-white border border-stone-200 rounded-lg p-0.5 shadow-2xs">
+            <div className="flex items-center bg-white border border-stone-200 rounded shadow-2xs">
               <button
                 type="button"
                 onMouseDown={(e) => e.preventDefault()}
                 onClick={() => handleFontSizeSelect(Math.max(10, activeFontSize - 2))}
-                className="px-1.5 py-0.5 text-stone-700 hover:text-stone-950 hover:bg-stone-100 font-bold text-xs rounded transition-colors"
+                className="px-2 py-0.5 text-stone-700 hover:text-stone-950 hover:bg-stone-100 font-bold text-xs"
                 title="Riduci font (A-)"
               >
                 A-
               </button>
-
-              {/* Active Highlighted Badge with hidden overlay select for instant choice */}
-              <div className="relative inline-flex items-center">
-                <span className="px-2 py-0.5 font-mono font-bold text-xs text-amber-950 bg-amber-100 border border-amber-300 rounded shadow-2xs min-w-[48px] text-center">
-                  {activeFontSize} pt
-                </span>
-                <select
-                  value={activeFontSize}
-                  onChange={(e) => handleFontSizeSelect(parseInt(e.target.value, 10))}
-                  className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
-                  title="Clicca per scegliere un'altra grandezza font"
-                >
-                  {COMMON_FONT_SIZES.map((s) => (
-                    <option key={s} value={s}>
-                      {s} pt
-                    </option>
-                  ))}
-                </select>
-              </div>
-
+              <select
+                value={activeFontSize}
+                onChange={(e) => handleFontSizeSelect(parseInt(e.target.value, 10))}
+                className="px-1 py-0.5 text-center font-mono font-bold text-xs text-amber-950 bg-transparent focus:outline-none cursor-pointer border-x border-stone-100"
+                title="Seleziona grandezza font"
+              >
+                {COMMON_FONT_SIZES.map((s) => (
+                  <option key={s} value={s}>
+                    {s}pt
+                  </option>
+                ))}
+              </select>
               <button
                 type="button"
                 onMouseDown={(e) => e.preventDefault()}
                 onClick={() => handleFontSizeSelect(Math.min(72, activeFontSize + 2))}
-                className="px-1.5 py-0.5 text-stone-700 hover:text-stone-950 hover:bg-stone-100 font-bold text-xs rounded transition-colors"
+                className="px-2 py-0.5 text-stone-700 hover:text-stone-950 hover:bg-stone-100 font-bold text-xs"
                 title="Aumenta font (A+)"
               >
                 A+
               </button>
-            </div>
-
-            {/* Quick Size Preset Pills with highlighted active state */}
-            <div className="hidden lg:flex items-center gap-0.5 bg-stone-100 p-0.5 rounded-md border border-stone-200">
-              {QUICK_FONT_SIZES.map((sz) => {
-                const isSelected = activeFontSize === sz;
-                return (
-                  <button
-                    key={sz}
-                    type="button"
-                    onMouseDown={(e) => e.preventDefault()}
-                    onClick={() => handleFontSizeSelect(sz)}
-                    className={`px-1.5 py-0.5 text-[11px] rounded transition-all font-bold ${
-                      isSelected
-                        ? 'bg-amber-800 text-white shadow-2xs ring-1 ring-amber-700'
-                        : 'text-stone-600 hover:text-stone-900 hover:bg-white'
-                    }`}
-                    title={`Imposta grandezza a ${sz} pt`}
-                  >
-                    {sz}
-                  </button>
-                );
-              })}
             </div>
           </div>
 
@@ -583,12 +546,12 @@ export const FormatToolbar: React.FC<FormatToolbarProps> = ({
           </div>
 
           {/* Text Align */}
-          <div className="flex items-center bg-white border border-stone-200 rounded p-0.5 shadow-2xs">
+          <div className="flex items-center bg-white border border-stone-200 rounded p-0.5">
             <button
               type="button"
               onClick={() => onTextAlignChange('left')}
               className={`p-1 rounded text-stone-600 hover:text-stone-900 ${
-                textAlign === 'left' ? 'bg-amber-100 text-amber-950 font-bold' : ''
+                textAlign === 'left' ? 'bg-stone-200 text-stone-900' : ''
               }`}
               title="Allinea in alto (verticale) / A sinistra (orizzontale)"
             >
@@ -598,9 +561,9 @@ export const FormatToolbar: React.FC<FormatToolbarProps> = ({
               type="button"
               onClick={() => onTextAlignChange('center')}
               className={`p-1 rounded text-stone-600 hover:text-stone-900 ${
-                textAlign === 'center' ? 'bg-amber-100 text-amber-950 font-bold' : ''
+                textAlign === 'center' ? 'bg-stone-200 text-stone-900' : ''
               }`}
-              title="Allinea al centro"
+              title="Allinea al centro (centra verticalmente nel foglio / colonna)"
             >
               <AlignCenter className="w-3.5 h-3.5" />
             </button>
@@ -608,7 +571,7 @@ export const FormatToolbar: React.FC<FormatToolbarProps> = ({
               type="button"
               onClick={() => onTextAlignChange('right')}
               className={`p-1 rounded text-stone-600 hover:text-stone-900 ${
-                textAlign === 'right' ? 'bg-amber-100 text-amber-950 font-bold' : ''
+                textAlign === 'right' ? 'bg-stone-200 text-stone-900' : ''
               }`}
               title="Allinea in basso (verticale) / A destra (orizzontale)"
             >
@@ -618,7 +581,7 @@ export const FormatToolbar: React.FC<FormatToolbarProps> = ({
               type="button"
               onClick={() => onTextAlignChange('justify')}
               className={`p-1 rounded text-stone-600 hover:text-stone-900 ${
-                textAlign === 'justify' ? 'bg-amber-100 text-amber-950 font-bold' : ''
+                textAlign === 'justify' ? 'bg-stone-200 text-stone-900' : ''
               }`}
               title="Giustificato"
             >
@@ -626,114 +589,75 @@ export const FormatToolbar: React.FC<FormatToolbarProps> = ({
             </button>
           </div>
 
-          {/* Allineamento Automatico alla Griglia (attivo per carte con quadretti o righe) */}
-          {paperStyle !== 'plain' && paperStyle !== 'xuan' && paperStyle !== 'hanji' && (
-            <div className="flex items-center gap-1">
-              <button
-                type="button"
-                onClick={() => {
-                  onAlignTextToGrid?.();
-                  setAlignedFeedback(true);
-                  setTimeout(() => setAlignedFeedback(false), 2000);
-                }}
-                className={`px-2.5 py-1 text-xs rounded-md font-bold transition-all shadow-2xs flex items-center gap-1.5 ${
-                  alignedFeedback
-                    ? 'bg-emerald-700 text-white ring-2 ring-emerald-500 shadow-sm'
-                    : 'bg-amber-100 hover:bg-amber-200 text-amber-950 border border-amber-300'
-                }`}
-                title="Allineamento Automatico: calcola e applica istantaneamente il passo ottimale per centrare ogni carattere nei quadretti o sulle righe"
-              >
-                <Sparkles className="w-3.5 h-3.5 text-amber-800" />
-                <span>{alignedFeedback ? '✓ Allineato alla Griglia!' : 'Allinea Griglia'}</span>
-              </button>
+          {paperStyle !== 'plain' && paperStyle !== 'xuan' && paperStyle !== 'hanji' ? (
+            <div className="flex items-center gap-1.5 bg-amber-50/90 border border-amber-300 px-2.5 py-1 rounded shadow-2xs">
+              <Sparkles className="w-3.5 h-3.5 text-amber-800" />
+              <span className="text-xs font-semibold text-amber-950">
+                Allineamento Griglia Attivo
+              </span>
+              {onAlignTextToGrid && (
+                <button
+                  type="button"
+                  onClick={onAlignTextToGrid}
+                  className="ml-1 px-2 py-0.5 text-[11px] bg-amber-800 hover:bg-amber-900 text-white rounded font-bold transition-colors shadow-2xs flex items-center gap-1"
+                  title="Forza riallineamento perfetto di ogni carattere nei quadretti o sulle righe"
+                >
+                  <Sparkles className="w-3 h-3" />
+                  <span>Riallinea</span>
+                </button>
+              )}
             </div>
+          ) : (
+            <>
+              {/* Interlinea (Spaziatura Righe / Colonne per carta bianca/xuan) */}
+              <div className="flex items-center gap-1 bg-white border border-stone-200 px-1.5 py-0.5 rounded shadow-2xs">
+                <span className="text-[11px] text-stone-500 font-medium whitespace-nowrap">Interlinea:</span>
+                <button
+                  type="button"
+                  onClick={() => onLineHeightChange(Math.max(1.0, Math.round((lineHeight - 0.1) * 10) / 10))}
+                  className="px-1.5 py-0.5 text-stone-600 hover:text-stone-950 hover:bg-stone-100 font-bold rounded"
+                  title="Riduci interlinea (-0.1)"
+                >
+                  -
+                </button>
+                <span className="px-1 py-0.5 min-w-[28px] text-center font-mono font-bold text-xs text-amber-950">
+                  {lineHeight.toFixed(1)}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => onLineHeightChange(Math.min(4.0, Math.round((lineHeight + 0.1) * 10) / 10))}
+                  className="px-1.5 py-0.5 text-stone-600 hover:text-stone-950 hover:bg-stone-100 font-bold rounded"
+                  title="Aumenta interlinea (+0.1)"
+                >
+                  +
+                </button>
+              </div>
+
+              {/* Spaziatura Caratteri */}
+              <div className="flex items-center gap-1 bg-white border border-stone-200 px-1.5 py-0.5 rounded shadow-2xs">
+                <span className="text-[11px] text-stone-500 font-medium whitespace-nowrap">Spaz. Caratteri:</span>
+                <button
+                  type="button"
+                  onClick={() => onLetterSpacingChange(Math.max(0, Math.round((letterSpacing - 0.05) * 100) / 100))}
+                  className="px-1.5 py-0.5 text-stone-600 hover:text-stone-950 hover:bg-stone-100 font-bold rounded"
+                  title="Riduci spaziatura caratteri"
+                >
+                  -
+                </button>
+                <span className="px-1 py-0.5 min-w-[34px] text-center font-mono font-bold text-xs text-amber-950">
+                  {letterSpacing.toFixed(2)}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => onLetterSpacingChange(Math.min(0.5, Math.round((letterSpacing + 0.05) * 100) / 100))}
+                  className="px-1.5 py-0.5 text-stone-600 hover:text-stone-950 hover:bg-stone-100 font-bold rounded"
+                  title="Aumenta spaziatura caratteri"
+                >
+                  +
+                </button>
+              </div>
+            </>
           )}
-
-          {/* Interlinea (sempre visibile e regolabile su qualsiasi tipo di carta) */}
-          <div className="flex items-center gap-1 bg-white border border-stone-200 px-2 py-0.5 rounded-lg shadow-2xs">
-            <span className="text-[11px] text-stone-500 font-medium whitespace-nowrap">Interlinea:</span>
-            <button
-              type="button"
-              onClick={() => onLineHeightChange(Math.max(1.0, Math.round((lineHeight - 0.1) * 10) / 10))}
-              className="px-1.5 py-0.5 text-stone-600 hover:text-stone-950 hover:bg-stone-100 font-bold rounded text-xs transition-colors"
-              title="Riduci interlinea (-0.1)"
-            >
-              -
-            </button>
-            <span className="px-1.5 py-0.5 min-w-[34px] text-center font-mono font-bold text-xs text-amber-950 bg-amber-50 border border-amber-200 rounded">
-              {lineHeight.toFixed(1)}
-            </span>
-            <button
-              type="button"
-              onClick={() => onLineHeightChange(Math.min(4.0, Math.round((lineHeight + 0.1) * 10) / 10))}
-              className="px-1.5 py-0.5 text-stone-600 hover:text-stone-950 hover:bg-stone-100 font-bold rounded text-xs transition-colors"
-              title="Aumenta interlinea (+0.1)"
-            >
-              +
-            </button>
-            <div className="hidden sm:flex items-center gap-0.5 ml-1 pl-1 border-l border-stone-200">
-              {[1.0, 1.2, 1.5, 2.0].map((lh) => (
-                <button
-                  key={lh}
-                  type="button"
-                  onClick={() => onLineHeightChange(lh)}
-                  className={`px-1 py-0.5 text-[10px] rounded font-semibold transition-colors ${
-                    Math.abs(lineHeight - lh) < 0.05
-                      ? 'bg-amber-800 text-white'
-                      : 'text-stone-600 hover:bg-stone-100'
-                  }`}
-                  title={`Interlinea ${lh}x`}
-                >
-                  {lh}x
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Spaziatura Caratteri (sempre visibile e regolabile su qualsiasi tipo di carta) */}
-          <div className="flex items-center gap-1 bg-white border border-stone-200 px-2 py-0.5 rounded-lg shadow-2xs">
-            <span className="text-[11px] text-stone-500 font-medium whitespace-nowrap">Spaziatura:</span>
-            <button
-              type="button"
-              onClick={() => onLetterSpacingChange(Math.max(0, Math.round((letterSpacing - 0.02) * 100) / 100))}
-              className="px-1.5 py-0.5 text-stone-600 hover:text-stone-950 hover:bg-stone-100 font-bold rounded text-xs transition-colors"
-              title="Riduci spaziatura caratteri (-0.02em)"
-            >
-              -
-            </button>
-            <span className="px-1.5 py-0.5 min-w-[38px] text-center font-mono font-bold text-xs text-amber-950 bg-amber-50 border border-amber-200 rounded">
-              {letterSpacing.toFixed(2)}
-            </span>
-            <button
-              type="button"
-              onClick={() => onLetterSpacingChange(Math.min(0.6, Math.round((letterSpacing + 0.02) * 100) / 100))}
-              className="px-1.5 py-0.5 text-stone-600 hover:text-stone-950 hover:bg-stone-100 font-bold rounded text-xs transition-colors"
-              title="Aumenta spaziatura caratteri (+0.02em)"
-            >
-              +
-            </button>
-            <div className="hidden sm:flex items-center gap-0.5 ml-1 pl-1 border-l border-stone-200">
-              {[
-                { label: '0', val: 0 },
-                { label: '+1', val: 0.04 },
-                { label: '+2', val: 0.08 },
-              ].map((sp) => (
-                <button
-                  key={sp.label}
-                  type="button"
-                  onClick={() => onLetterSpacingChange(sp.val)}
-                  className={`px-1 py-0.5 text-[10px] rounded font-semibold transition-colors ${
-                    Math.abs(letterSpacing - sp.val) < 0.02
-                      ? 'bg-amber-800 text-white'
-                      : 'text-stone-600 hover:bg-stone-100'
-                  }`}
-                  title={`Spaziatura ${sp.val}em`}
-                >
-                  {sp.label}
-                </button>
-              ))}
-            </div>
-          </div>
 
           {/* Emphasis Dots */}
           <button
