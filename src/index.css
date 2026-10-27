@@ -267,13 +267,6 @@ rt {
     print-color-adjust: exact !important;
   }
 
-  .grid-pattern-overlay,
-  .traditional-border-overlay {
-    display: block !important;
-    -webkit-print-color-adjust: exact !important;
-    print-color-adjust: exact !important;
-  }
-
   @page {
     margin: 0;
     size: auto;
