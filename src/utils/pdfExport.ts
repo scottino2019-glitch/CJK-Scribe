@@ -134,41 +134,12 @@ export async function exportDocumentToPdf(
             element.getAttribute('data-no-export') === 'true'
           );
         },
-        onclone: async (clonedDoc) => {
-          // 1. Copy all loaded fonts & stylesheets directly into cloned document head
+        onclone: (clonedDoc) => {
+          // Copy fonts and stylesheets to cloned document to guarantee font metrics
           const styles = document.querySelectorAll('link[rel="stylesheet"], style');
           styles.forEach((s) => {
             clonedDoc.head.appendChild(s.cloneNode(true));
           });
-
-          // Inject all loaded CSS rules to ensure @font-face rules are available in clone
-          try {
-            const aggregatedRules: string[] = [];
-            for (let sIdx = 0; sIdx < document.styleSheets.length; sIdx++) {
-              try {
-                const sheet = document.styleSheets[sIdx];
-                if (sheet && sheet.cssRules) {
-                  for (let rIdx = 0; rIdx < sheet.cssRules.length; rIdx++) {
-                    aggregatedRules.push(sheet.cssRules[rIdx].cssText);
-                  }
-                }
-              } catch (_) {
-                // Cross-origin stylesheet access restriction ignored
-              }
-            }
-            if (aggregatedRules.length > 0) {
-              const inlineStyle = clonedDoc.createElement('style');
-              inlineStyle.textContent = aggregatedRules.join('\n');
-              clonedDoc.head.appendChild(inlineStyle);
-            }
-          } catch (_) {}
-
-          // Ensure web fonts are ready in the cloned document
-          if ((clonedDoc as any).fonts) {
-            try {
-              await (clonedDoc as any).fonts.ready;
-            } catch (_) {}
-          }
 
           const clonedPage = clonedDoc.getElementById(elId);
           if (clonedPage) {
@@ -187,34 +158,7 @@ export async function exportDocumentToPdf(
             clonedPage.style.transform = 'none';
             clonedPage.style.padding = `${marginPx}px`;
 
-            // 2. Explicitly transfer computed typography from live DOM to cloned DOM
-            try {
-              const liveElements = [el, ...Array.from(el.querySelectorAll('*'))] as HTMLElement[];
-              const clonedElements = [clonedPage, ...Array.from(clonedPage.querySelectorAll('*'))] as HTMLElement[];
-              const count = Math.min(liveElements.length, clonedElements.length);
-
-              for (let idx = 0; idx < count; idx++) {
-                const liveEl = liveElements[idx];
-                const cloneEl = clonedElements[idx];
-                if (!liveEl || !cloneEl) continue;
-
-                const cs = window.getComputedStyle(liveEl);
-                if (cs.fontFamily) cloneEl.style.fontFamily = cs.fontFamily;
-                if (cs.fontSize) cloneEl.style.fontSize = cs.fontSize;
-                if (cs.fontWeight) cloneEl.style.fontWeight = cs.fontWeight;
-                if (cs.fontStyle) cloneEl.style.fontStyle = cs.fontStyle;
-                if (cs.color && cs.color !== 'rgba(0, 0, 0, 0)') cloneEl.style.color = cs.color;
-                if (cs.lineHeight) cloneEl.style.lineHeight = cs.lineHeight;
-                if (cs.letterSpacing) cloneEl.style.letterSpacing = cs.letterSpacing;
-                if (cs.textAlign) cloneEl.style.textAlign = cs.textAlign;
-                if (cs.writingMode) cloneEl.style.writingMode = cs.writingMode;
-                if (cs.textOrientation) cloneEl.style.textOrientation = cs.textOrientation;
-              }
-            } catch (styleErr) {
-              console.warn('Computed style transfer fallback:', styleErr);
-            }
-
-            // 3. Explicitly force grid pattern overlay dimensions to match content container
+            // Explicitly force grid pattern overlay dimensions to match content container
             const gridPattern = clonedPage.querySelector('.grid-pattern-overlay') as HTMLElement | null;
             if (gridPattern) {
               gridPattern.style.top = '0px';
@@ -223,9 +167,7 @@ export async function exportDocumentToPdf(
               gridPattern.style.bottom = '0px';
               gridPattern.style.width = '100%';
               gridPattern.style.height = '100%';
-              gridPattern.style.position = 'absolute';
               gridPattern.style.display = 'block';
-              gridPattern.style.pointerEvents = 'none';
             }
 
             // Explicitly force traditional border overlay dimensions
@@ -237,7 +179,6 @@ export async function exportDocumentToPdf(
               borderOverlay.style.bottom = '0px';
               borderOverlay.style.width = '100%';
               borderOverlay.style.height = '100%';
-              borderOverlay.style.position = 'absolute';
               borderOverlay.style.display = 'block';
             }
           }
@@ -250,9 +191,9 @@ export async function exportDocumentToPdf(
           });
 
           // Remove active outlines and selection highlights from cloned DOM
-          const activeRings = clonedDoc.querySelectorAll('.ring-1, .ring-2, .bg-amber-500\\/5, .bg-amber-500\\/10');
+          const activeRings = clonedDoc.querySelectorAll('.ring-1, .ring-2, .bg-amber-500\\/5');
           activeRings.forEach((ring) => {
-            ring.classList.remove('ring-1', 'ring-2', 'ring-amber-700/60', 'ring-amber-500/60', 'bg-amber-500/5', 'bg-amber-500/10');
+            ring.classList.remove('ring-1', 'ring-2', 'ring-amber-700/60', 'ring-amber-500/60', 'bg-amber-500/5');
           });
 
           const noPrints = clonedDoc.querySelectorAll('.no-print');
