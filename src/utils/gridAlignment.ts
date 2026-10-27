@@ -385,19 +385,21 @@ export function calculateGridTypographyMetrics(
   const pitch = spec.pitch;
 
   if (paperStyle === 'quadretti-5mm') {
-    const fs = currentFontSize ? Math.max(10, Math.min(22, currentFontSize)) : 15;
+    const fs = currentFontSize ? Math.max(10, Math.min(24, currentFontSize)) : 15;
+    const lh = Math.round((24 / fs) * 100) / 100;
     return {
       fontSize: fs,
-      lineHeight: 1.0,
+      lineHeight: lh,
       letterSpacing: 0.03,
     };
   }
 
   if (paperStyle === 'quadretti-10mm') {
-    const fs = currentFontSize ? Math.max(12, Math.min(44, currentFontSize)) : 26;
+    const fs = currentFontSize ? Math.max(12, Math.min(48, currentFontSize)) : 26;
+    const lh = Math.round((48 / fs) * 100) / 100;
     return {
       fontSize: fs,
-      lineHeight: 1.0,
+      lineHeight: lh,
       letterSpacing: 0.04,
     };
   }
