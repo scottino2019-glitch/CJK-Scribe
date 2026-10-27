@@ -173,7 +173,6 @@ export interface CJKDocument {
   primaryColor: string;
   marginMm: number; // 15, 20, 25
   gridOpacity?: number; // 0.1 to 1.0 (opacity of manuscript lines/grid)
-  autoGridAlign?: boolean; // true = auto snap to grid; false = free manual spacing
   showPageNumbers: boolean;
   headerText?: string;
   footerText?: string;
