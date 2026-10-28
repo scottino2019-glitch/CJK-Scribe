@@ -189,8 +189,6 @@ export const DocumentPaper: React.FC<DocumentPaperProps> = ({
     const blockFontSize = block.fontSize || doc.defaultFontSize;
     const blockColor = block.color || doc.primaryColor;
     const blockAlign = block.textAlign || 'left';
-    const blockLineHeight = block.lineHeight || doc.lineSpacing;
-    const blockLetterSpacing = `${block.letterSpacing ?? doc.characterSpacing}em`;
 
     const gridStyle = getBlockExactGridStyle(
       doc.paperStyle,
@@ -200,6 +198,12 @@ export const DocumentPaper: React.FC<DocumentPaperProps> = ({
     );
     const isGridPaper = gridStyle.isGridPaper;
 
+    const blockLineHeight = block.lineHeight ?? doc.lineSpacing ?? 1.5;
+    const isNotebookPaper =
+      doc.paperStyle === 'quadretti-5mm' ||
+      doc.paperStyle === 'quadretti-10mm' ||
+      doc.paperStyle === 'classical-horizontal';
+
     const hasRuby = block.content?.includes('<ruby>');
     const effectiveLineHeight = hasRuby
       ? Math.max(blockLineHeight, 1.8)
@@ -208,11 +212,6 @@ export const DocumentPaper: React.FC<DocumentPaperProps> = ({
     const blockTextAlign = isVertical
       ? 'left'
       : (isGridPaper && blockAlign === 'center' ? 'left' : blockAlign);
-
-    const isNotebookPaper =
-      doc.paperStyle === 'quadretti-5mm' ||
-      doc.paperStyle === 'quadretti-10mm' ||
-      doc.paperStyle === 'classical-horizontal';
 
     const commonStyle: React.CSSProperties = isGridPaper
       ? {

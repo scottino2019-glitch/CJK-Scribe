@@ -591,10 +591,11 @@ export default function App() {
   };
 
   const handleLineSpacingChange = (newSpacing: number, applyToAllBlocks = true) => {
-    const val = Math.max(1.0, Math.min(4.0, Math.round(newSpacing * 100) / 100));
+    const val = Math.max(1.0, Math.min(4.0, Math.round(newSpacing * 10) / 10));
     updateDoc((prev) => ({
       ...prev,
       lineSpacing: val,
+      autoGridAlign: false,
       pages: applyToAllBlocks
         ? prev.pages.map((p) => ({
             ...p,
@@ -611,7 +612,7 @@ export default function App() {
   };
 
   const handleAlignTextToPaperGrid = () => {
-    updateDoc((prev) => alignDocumentToPaperGrid(prev));
+    updateDoc((prev) => alignDocumentToPaperGrid({ ...prev, autoGridAlign: true }));
   };
 
   const handleCharacterSpacingChange = (newSpacing: number, applyToAllBlocks = true) => {
@@ -619,6 +620,7 @@ export default function App() {
     updateDoc((prev) => ({
       ...prev,
       characterSpacing: val,
+      autoGridAlign: false,
       pages: applyToAllBlocks
         ? prev.pages.map((p) => ({
             ...p,

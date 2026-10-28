@@ -135,11 +135,33 @@ export async function exportDocumentToPdf(
           );
         },
         onclone: (clonedDoc) => {
-          // Copy fonts and stylesheets to cloned document to guarantee font metrics
+          // 1. Copy all loaded fonts & stylesheets directly into cloned document head
           const styles = document.querySelectorAll('link[rel="stylesheet"], style');
           styles.forEach((s) => {
             clonedDoc.head.appendChild(s.cloneNode(true));
           });
+
+          // Inject all loaded CSS rules to ensure @font-face rules are available in clone
+          try {
+            const aggregatedRules: string[] = [];
+            for (let sIdx = 0; sIdx < document.styleSheets.length; sIdx++) {
+              try {
+                const sheet = document.styleSheets[sIdx];
+                if (sheet && sheet.cssRules) {
+                  for (let rIdx = 0; rIdx < sheet.cssRules.length; rIdx++) {
+                    aggregatedRules.push(sheet.cssRules[rIdx].cssText);
+                  }
+                }
+              } catch (_) {
+                // Cross-origin stylesheet access restriction ignored
+              }
+            }
+            if (aggregatedRules.length > 0) {
+              const inlineStyle = clonedDoc.createElement('style');
+              inlineStyle.textContent = aggregatedRules.join('\n');
+              clonedDoc.head.appendChild(inlineStyle);
+            }
+          } catch (_) {}
 
           const clonedPage = clonedDoc.getElementById(elId);
           if (clonedPage) {
@@ -158,7 +180,61 @@ export async function exportDocumentToPdf(
             clonedPage.style.transform = 'none';
             clonedPage.style.padding = `${marginPx}px`;
 
-            // Explicitly force grid pattern overlay dimensions to match content container
+            // 2. CRITICAL: Remove all contenteditable attributes so html2canvas renders pure text nodes
+            const allEditables = clonedDoc.querySelectorAll('[contenteditable]');
+            allEditables.forEach((ed) => {
+              (ed as HTMLElement).removeAttribute('contenteditable');
+            });
+
+            // 3. Explicitly transfer content & computed typography from live document blocks to cloned blocks
+            try {
+              const liveBlocks = el.querySelectorAll('[data-block-id]');
+              liveBlocks.forEach((liveBlock) => {
+                const blockId = liveBlock.getAttribute('data-block-id');
+                if (!blockId) return;
+
+                const cloneBlock = clonedPage.querySelector(`[data-block-id="${blockId}"]`) as HTMLElement | null;
+                if (cloneBlock) {
+                  // Ensure text and HTML is exactly preserved
+                  cloneBlock.innerHTML = (liveBlock as HTMLElement).innerHTML;
+
+                  // Apply computed typography directly as inline styles
+                  const cs = window.getComputedStyle(liveBlock);
+                  if (cs.fontFamily) cloneBlock.style.fontFamily = cs.fontFamily;
+                  if (cs.fontSize) cloneBlock.style.fontSize = cs.fontSize;
+                  if (cs.fontWeight) cloneBlock.style.fontWeight = cs.fontWeight;
+                  if (cs.fontStyle) cloneBlock.style.fontStyle = cs.fontStyle;
+                  cloneBlock.style.color = (cs.color && cs.color !== 'rgba(0, 0, 0, 0)') ? cs.color : '#1c1917';
+                  if (cs.lineHeight) cloneBlock.style.lineHeight = cs.lineHeight;
+                  if (cs.letterSpacing) cloneBlock.style.letterSpacing = cs.letterSpacing;
+                  if (cs.textAlign) cloneBlock.style.textAlign = cs.textAlign;
+                  if (cs.writingMode) cloneBlock.style.writingMode = cs.writingMode;
+                  if (cs.textOrientation) cloneBlock.style.textOrientation = cs.textOrientation;
+                  cloneBlock.style.visibility = 'visible';
+                  cloneBlock.style.opacity = '1';
+                }
+              });
+
+              // Transfer table cell contents and styles
+              const liveCells = el.querySelectorAll('td, th');
+              const cloneCells = clonedPage.querySelectorAll('td, th');
+              for (let i = 0; i < liveCells.length && i < cloneCells.length; i++) {
+                const lc = liveCells[i] as HTMLElement;
+                const cc = cloneCells[i] as HTMLElement;
+                if (lc && cc) {
+                  cc.innerHTML = lc.innerHTML;
+                  const cs = window.getComputedStyle(lc);
+                  if (cs.fontFamily) cc.style.fontFamily = cs.fontFamily;
+                  if (cs.fontSize) cc.style.fontSize = cs.fontSize;
+                  cc.style.color = (cs.color && cs.color !== 'rgba(0, 0, 0, 0)') ? cs.color : '#1c1917';
+                  if (cs.textAlign) cc.style.textAlign = cs.textAlign;
+                }
+              }
+            } catch (syncErr) {
+              console.warn('Block typography synchronization fallback:', syncErr);
+            }
+
+            // 4. Force grid pattern overlay dimensions to match content container
             const gridPattern = clonedPage.querySelector('.grid-pattern-overlay') as HTMLElement | null;
             if (gridPattern) {
               gridPattern.style.top = '0px';
@@ -167,7 +243,9 @@ export async function exportDocumentToPdf(
               gridPattern.style.bottom = '0px';
               gridPattern.style.width = '100%';
               gridPattern.style.height = '100%';
+              gridPattern.style.position = 'absolute';
               gridPattern.style.display = 'block';
+              gridPattern.style.pointerEvents = 'none';
             }
 
             // Explicitly force traditional border overlay dimensions
@@ -179,6 +257,7 @@ export async function exportDocumentToPdf(
               borderOverlay.style.bottom = '0px';
               borderOverlay.style.width = '100%';
               borderOverlay.style.height = '100%';
+              borderOverlay.style.position = 'absolute';
               borderOverlay.style.display = 'block';
             }
           }
@@ -191,9 +270,9 @@ export async function exportDocumentToPdf(
           });
 
           // Remove active outlines and selection highlights from cloned DOM
-          const activeRings = clonedDoc.querySelectorAll('.ring-1, .ring-2, .bg-amber-500\\/5');
+          const activeRings = clonedDoc.querySelectorAll('.ring-1, .ring-2, .bg-amber-500\\/5, .bg-amber-500\\/10');
           activeRings.forEach((ring) => {
-            ring.classList.remove('ring-1', 'ring-2', 'ring-amber-700/60', 'ring-amber-500/60', 'bg-amber-500/5');
+            ring.classList.remove('ring-1', 'ring-2', 'ring-amber-700/60', 'ring-amber-500/60', 'bg-amber-500/5', 'bg-amber-500/10');
           });
 
           const noPrints = clonedDoc.querySelectorAll('.no-print');
