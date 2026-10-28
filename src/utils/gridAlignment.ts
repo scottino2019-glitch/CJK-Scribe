@@ -214,14 +214,15 @@ export function getBlockExactGridStyle(
 
   const pitch = spec.pitch;
 
-  // Quadretti Notebooks (5mm & 10mm): Authentic continuous school handwriting along grid rows
+  // Quadretti Notebooks (5mm & 10mm): Authentic continuous handwriting along grid rows
   if (paperStyle === 'quadretti-5mm') {
-    const fs = customFontSize
-      ? Math.max(10, Math.min(22, customFontSize))
-      : 15;
+    const fs = customFontSize ? Math.max(10, Math.min(72, customFontSize)) : 15;
+    // For sizes <= 24px, 1 row (24px). If > 24px and <= 48px, 2 rows (48px). If > 48px, 3 rows (72px).
+    const rows = fs <= 24 ? 1 : fs <= 48 ? 2 : 3;
+    const lineHeightPx = rows * 24;
     return {
       fontSize: fs,
-      lineHeight: '24px',
+      lineHeight: `${lineHeightPx}px`,
       letterSpacing: '0.03em',
       paddingLeft: '0px',
       paddingTop: '0px',
@@ -233,12 +234,12 @@ export function getBlockExactGridStyle(
   }
 
   if (paperStyle === 'quadretti-10mm') {
-    const fs = customFontSize
-      ? Math.max(12, Math.min(44, customFontSize))
-      : 26;
+    const fs = customFontSize ? Math.max(10, Math.min(72, customFontSize)) : 26;
+    const rows = fs <= 48 ? 1 : 2;
+    const lineHeightPx = rows * 48;
     return {
       fontSize: fs,
-      lineHeight: '48px',
+      lineHeight: `${lineHeightPx}px`,
       letterSpacing: '0.04em',
       paddingLeft: '0px',
       paddingTop: '0px',
@@ -252,17 +253,14 @@ export function getBlockExactGridStyle(
   // Asian Practice Square Grids (Tianzige, Mizige, Jiugongge, Huigongge, Wongozhi):
   // 1 CJK character centered in each square box
   if (spec.type === 'square') {
-    const maxFitting = pitch > 30 ? pitch - 4 : pitch - 2;
     const fs = customFontSize
-      ? Math.max(12, Math.min(maxFitting, customFontSize))
+      ? Math.max(10, Math.min(72, customFontSize))
       : spec.recommendedFontSize;
 
     const offset = Math.max(0, Math.round((pitch - fs) / 2));
     const spacingPx = Math.max(0, pitch - fs);
 
     if (isVertical) {
-      // In vertical-rl: column width = lineHeight (pitch). The browser automatically centers horizontally in column.
-      // Vertically downwards: first char is centered with paddingTop, subsequent with letterSpacing.
       return {
         fontSize: fs,
         lineHeight: `${pitch}px`,
@@ -275,9 +273,6 @@ export function getBlockExactGridStyle(
         pitch,
       };
     } else {
-      // In horizontal-tb: row height = lineHeight (pitch). The browser line box automatically centers vertically!
-      // Therefore paddingTop MUST be 0px (zero vertical displacement across grid lines!).
-      // Horizontally: first char is centered with paddingLeft, subsequent with letterSpacing.
       return {
         fontSize: fs,
         lineHeight: `${pitch}px`,
@@ -295,7 +290,7 @@ export function getBlockExactGridStyle(
   if (spec.type === 'vertical-column') {
     // Classical columns (Zhu Si Lan, Wu Si Lan - 48px columns)
     const fs = customFontSize
-      ? Math.max(12, Math.min(pitch - 8, customFontSize))
+      ? Math.max(10, Math.min(72, customFontSize))
       : spec.recommendedFontSize;
 
     if (isVertical) {
@@ -327,13 +322,14 @@ export function getBlockExactGridStyle(
 
   // Horizontal lines (Classical horizontal - 36px ruled lines)
   const fs = customFontSize
-    ? Math.max(12, Math.min(pitch - 6, customFontSize))
+    ? Math.max(10, Math.min(72, customFontSize))
     : spec.recommendedFontSize;
+  const rows = fs <= 36 ? 1 : 2;
 
   if (!isVertical) {
     return {
       fontSize: fs,
-      lineHeight: `${pitch}px`,
+      lineHeight: `${rows * 36}px`,
       letterSpacing: '0.04em',
       paddingLeft: '0px',
       paddingTop: '0px',
@@ -385,8 +381,9 @@ export function calculateGridTypographyMetrics(
   const pitch = spec.pitch;
 
   if (paperStyle === 'quadretti-5mm') {
-    const fs = currentFontSize ? Math.max(10, Math.min(24, currentFontSize)) : 15;
-    const lh = Math.round((24 / fs) * 100) / 100;
+    const fs = currentFontSize ? Math.max(10, Math.min(72, currentFontSize)) : 15;
+    const rows = fs <= 24 ? 1 : fs <= 48 ? 2 : 3;
+    const lh = Math.round(((rows * 24) / fs) * 100) / 100;
     return {
       fontSize: fs,
       lineHeight: lh,
@@ -395,8 +392,9 @@ export function calculateGridTypographyMetrics(
   }
 
   if (paperStyle === 'quadretti-10mm') {
-    const fs = currentFontSize ? Math.max(12, Math.min(48, currentFontSize)) : 26;
-    const lh = Math.round((48 / fs) * 100) / 100;
+    const fs = currentFontSize ? Math.max(10, Math.min(72, currentFontSize)) : 26;
+    const rows = fs <= 48 ? 1 : 2;
+    const lh = Math.round(((rows * 48) / fs) * 100) / 100;
     return {
       fontSize: fs,
       lineHeight: lh,
@@ -405,9 +403,8 @@ export function calculateGridTypographyMetrics(
   }
 
   if (spec.type === 'square') {
-    const maxFitting = pitch > 30 ? pitch - 4 : pitch - 2;
     const targetFontSize = currentFontSize
-      ? Math.max(12, Math.min(maxFitting, currentFontSize))
+      ? Math.max(10, Math.min(72, currentFontSize))
       : spec.recommendedFontSize;
     const lineHeight = Math.round((pitch / targetFontSize) * 100) / 100;
 
@@ -420,7 +417,7 @@ export function calculateGridTypographyMetrics(
 
   if (spec.type === 'vertical-column') {
     const targetFontSize = currentFontSize
-      ? Math.max(12, Math.min(pitch - 8, currentFontSize))
+      ? Math.max(10, Math.min(72, currentFontSize))
       : spec.recommendedFontSize;
     const lineHeight = Math.round((pitch / targetFontSize) * 100) / 100;
 
@@ -433,9 +430,10 @@ export function calculateGridTypographyMetrics(
 
   // Horizontal lines
   const targetFontSize = currentFontSize
-    ? Math.max(12, Math.min(pitch - 6, currentFontSize))
+    ? Math.max(10, Math.min(72, currentFontSize))
     : spec.recommendedFontSize;
-  const lineHeight = Math.round((pitch / targetFontSize) * 100) / 100;
+  const rows = targetFontSize <= 36 ? 1 : 2;
+  const lineHeight = Math.round(((rows * 36) / targetFontSize) * 100) / 100;
 
   return {
     fontSize: targetFontSize,
@@ -467,12 +465,7 @@ export function alignDocumentToPaperGrid(doc: CJKDocument): CJKDocument {
       ...p,
       blocks: p.blocks.map((b) => {
         const bFont = b.fontFamily || doc.defaultFontFamily;
-        let bFontSize = b.fontSize || doc.defaultFontSize || metrics.fontSize;
-        if (b.type === 'heading1' && spec.type !== 'square') {
-          bFontSize = Math.min(36, bFontSize + 4);
-        } else if (b.type === 'heading2' && spec.type !== 'square') {
-          bFontSize = Math.max(14, bFontSize - 2);
-        }
+        const bFontSize = b.fontSize || doc.defaultFontSize || metrics.fontSize;
 
         const bMetrics = calculateGridTypographyMetrics(
           doc.paperStyle,

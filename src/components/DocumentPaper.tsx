@@ -247,9 +247,9 @@ export const DocumentPaper: React.FC<DocumentPaperProps> = ({
 
     switch (block.type) {
       case 'heading1': {
-        const h1FontSize = isGridPaper
+        const h1FontSize = block.fontSize || (isGridPaper
           ? gridStyle.fontSize
-          : block.fontSize || Math.round(doc.defaultFontSize * 1.5);
+          : Math.round(doc.defaultFontSize * 1.5));
         return (
           <EditableBlock
             blockId={block.id}
@@ -271,9 +271,9 @@ export const DocumentPaper: React.FC<DocumentPaperProps> = ({
       }
 
       case 'heading2': {
-        const h2FontSize = isGridPaper
+        const h2FontSize = block.fontSize || (isGridPaper
           ? gridStyle.fontSize
-          : block.fontSize || Math.round(doc.defaultFontSize * 1.15);
+          : Math.round(doc.defaultFontSize * 1.15));
         return (
           <EditableBlock
             blockId={block.id}

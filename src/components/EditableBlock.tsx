@@ -60,6 +60,10 @@ export const EditableBlock: React.FC<EditableBlockProps> = ({
         onFocus();
         handleSelection();
       }}
+      onClick={() => {
+        onFocus();
+        handleSelection();
+      }}
       onInput={(e) => {
         isTypingRef.current = true;
         if (!isComposingRef.current) {

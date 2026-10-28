@@ -21,9 +21,9 @@ import {
 } from '../utils/gridAlignment';
 
 const COMMON_FONT_SIZES = [
-  10, 11, 12, 13, 14, 15, 16, 17, 18, 20, 22, 24, 26, 28, 30, 32, 36, 40, 44, 48, 56, 64, 72,
+  10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 24, 26, 28, 30, 32, 36, 40, 44, 48, 56, 64, 72,
 ];
-const QUICK_FONT_SIZES = [14, 18, 22, 26, 32, 40];
+const QUICK_FONT_SIZES = [14, 18, 22, 24, 26, 32, 40];
 import {
   AlignLeft,
   AlignCenter,
@@ -156,14 +156,14 @@ export const FormatToolbar: React.FC<FormatToolbarProps> = ({
   };
 
   const handleFontSizeSelect = (size: number) => {
+    const boundedSize = Math.max(10, Math.min(72, size));
     if (hasActiveSelection()) {
-      const res = applyStyleToSelection({ fontSize: size }, activeBlockId);
+      const res = applyStyleToSelection({ fontSize: boundedSize }, activeBlockId);
       if (res && onUpdateBlockContent) {
         onUpdateBlockContent(res.blockId, res.newHtml);
-        return;
       }
     }
-    onFontSizeChange(size);
+    onFontSizeChange(boundedSize);
   };
 
   const handleColorSelect = (colorHex: string) => {
@@ -461,8 +461,8 @@ export const FormatToolbar: React.FC<FormatToolbarProps> = ({
               {isTableActive ? 'Font Tabella:' : 'Dim:'}
             </span>
 
-            {/* Prominently Highlighted Active Font Size Badge with Steppers */}
-            <div className="flex items-center gap-0.5 bg-white border border-stone-200 rounded-lg p-0.5 shadow-2xs">
+            {/* Prominently Highlighted Active Font Size Dropdown Menu with Steppers */}
+            <div className="flex items-center gap-1 bg-white border border-stone-200 rounded-lg p-0.5 shadow-2xs">
               <button
                 type="button"
                 onMouseDown={(e) => e.preventDefault()}
@@ -473,24 +473,24 @@ export const FormatToolbar: React.FC<FormatToolbarProps> = ({
                 A-
               </button>
 
-              {/* Active Highlighted Badge with hidden overlay select for instant choice */}
-              <div className="relative inline-flex items-center">
-                <span className="px-2 py-0.5 font-mono font-bold text-xs text-amber-950 bg-amber-100 border border-amber-300 rounded shadow-2xs min-w-[48px] text-center">
-                  {activeFontSize} pt
-                </span>
-                <select
-                  value={activeFontSize}
-                  onChange={(e) => handleFontSizeSelect(parseInt(e.target.value, 10))}
-                  className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
-                  title="Clicca per scegliere un'altra grandezza font"
-                >
-                  {COMMON_FONT_SIZES.map((s) => (
-                    <option key={s} value={s}>
-                      {s} pt
-                    </option>
-                  ))}
-                </select>
-              </div>
+              {/* Visible, high-contrast, real dropdown select menu */}
+              <select
+                value={activeFontSize}
+                onChange={(e) => handleFontSizeSelect(parseInt(e.target.value, 10))}
+                className="px-2 py-0.5 bg-amber-100 hover:bg-amber-200/80 border border-amber-300 rounded font-mono font-bold text-xs text-amber-950 focus:outline-none focus:ring-1 focus:ring-amber-700 cursor-pointer shadow-2xs transition-colors min-w-[76px] text-center"
+                title="Menu a tendina grandezza font: scegli una dimensione in pt"
+              >
+                {!COMMON_FONT_SIZES.includes(activeFontSize) && (
+                  <option value={activeFontSize}>
+                    {activeFontSize} pt (Attuale)
+                  </option>
+                )}
+                {COMMON_FONT_SIZES.map((s) => (
+                  <option key={s} value={s}>
+                    {s} pt {s === activeFontSize ? '✓' : ''}
+                  </option>
+                ))}
+              </select>
 
               <button
                 type="button"

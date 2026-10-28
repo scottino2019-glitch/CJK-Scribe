@@ -72,6 +72,7 @@ export const PageSettingsDrawer: React.FC<PageSettingsDrawerProps> = ({
   onTogglePageNumbers,
   showMarginGuides,
   onToggleMarginGuides,
+  activeBlockId,
 }) => {
   if (!isOpen) return null;
 
@@ -79,6 +80,11 @@ export const PageSettingsDrawer: React.FC<PageSettingsDrawerProps> = ({
     doc.paperStyle !== 'plain' &&
     doc.paperStyle !== 'xuan' &&
     doc.paperStyle !== 'hanji';
+
+  const activeBlock = activeBlockId
+    ? doc.pages.flatMap((p) => p.blocks).find((b) => b.id === activeBlockId)
+    : undefined;
+  const currentFontSize = activeBlock?.fontSize || doc.defaultFontSize;
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end no-print bg-black/40 backdrop-blur-xs animate-in fade-in duration-150">
@@ -295,18 +301,20 @@ export const PageSettingsDrawer: React.FC<PageSettingsDrawerProps> = ({
             {onFontSizeChange && (
               <div className="space-y-1.5 pb-2 border-b border-stone-200">
                 <div className="flex items-center justify-between">
-                  <span className="text-stone-700 font-medium">Dimensione Carattere (Font Size):</span>
+                  <span className="text-stone-700 font-medium">
+                    {activeBlock ? 'Dimensione Blocco Selezionato:' : 'Dimensione Carattere (Font Size):'}
+                  </span>
                   <span className="font-mono text-amber-950 font-bold px-1.5 py-0.5 bg-amber-100 rounded text-xs">
-                    {doc.defaultFontSize} pt
+                    {currentFontSize} pt
                   </span>
                 </div>
                 <div className="flex items-center gap-2">
                   <input
                     type="range"
-                    min={12}
-                    max={48}
+                    min={10}
+                    max={72}
                     step={1}
-                    value={doc.defaultFontSize}
+                    value={currentFontSize}
                     onChange={(e) => onFontSizeChange(parseInt(e.target.value, 10))}
                     className="w-full accent-amber-800 cursor-pointer"
                   />
@@ -314,7 +322,7 @@ export const PageSettingsDrawer: React.FC<PageSettingsDrawerProps> = ({
                     <button
                       type="button"
                       onMouseDown={(e) => e.preventDefault()}
-                      onClick={() => onFontSizeChange(Math.max(10, doc.defaultFontSize - 2))}
+                      onClick={() => onFontSizeChange(Math.max(10, currentFontSize - 2))}
                       className="px-2 py-0.5 text-xs font-bold bg-white border border-stone-300 rounded hover:bg-stone-100 transition-colors"
                       title="Riduci font (A-)"
                     >
@@ -323,7 +331,7 @@ export const PageSettingsDrawer: React.FC<PageSettingsDrawerProps> = ({
                     <button
                       type="button"
                       onMouseDown={(e) => e.preventDefault()}
-                      onClick={() => onFontSizeChange(Math.min(72, doc.defaultFontSize + 2))}
+                      onClick={() => onFontSizeChange(Math.min(72, currentFontSize + 2))}
                       className="px-2 py-0.5 text-xs font-bold bg-white border border-stone-300 rounded hover:bg-stone-100 transition-colors"
                       title="Aumenta font (A+)"
                     >

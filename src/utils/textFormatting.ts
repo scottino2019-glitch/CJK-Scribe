@@ -12,11 +12,18 @@ export function saveSelection(blockId?: string | null): Range | null {
   if (sel && sel.rangeCount > 0) {
     const range = sel.getRangeAt(0);
     // Ensure the range is not collapsed (user has actually selected text)
-    if (!range.collapsed) {
+    if (!range.collapsed && range.toString().trim().length > 0) {
       lastSavedRange = range.cloneRange();
       if (blockId) lastActiveBlockId = blockId;
       return lastSavedRange;
+    } else {
+      // If collapsed or empty, clear the saved range so stale selection doesn't linger!
+      lastSavedRange = null;
+      lastActiveBlockId = null;
     }
+  } else {
+    lastSavedRange = null;
+    lastActiveBlockId = null;
   }
   return null;
 }
