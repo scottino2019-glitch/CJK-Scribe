@@ -131,33 +131,194 @@ export const DocumentPaper: React.FC<DocumentPaperProps> = ({
   // Paper base color in HEX for exact inline styling and PDF fidelity
   const paperBgHex = getPaperBaseColorHex(doc.paperStyle);
 
-  // Pattern class for manuscript lines and grids
-  const getPatternClass = () => {
+  // Foreground SVG pattern for manuscript lines and grids (prints reliably even with browser "Background graphics" off)
+  const renderGridPatternSvg = (pageId: string) => {
+    const patId = `cjk_grid_${pageId}_${doc.paperStyle}`;
     switch (doc.paperStyle) {
       case 'wongozhi':
-        return 'pattern-wongozhi';
+        return (
+          <svg
+            width="100%"
+            height="100%"
+            className="block w-full h-full"
+            style={isVertical ? { transform: 'scaleX(-1)' } : undefined}
+          >
+            <defs>
+              <pattern id={patId} width="40" height="40" patternUnits="userSpaceOnUse">
+                <rect x="0.5" y="0.5" width="39" height="39" fill="none" stroke="#15803D" strokeWidth="1.2" />
+              </pattern>
+            </defs>
+            <rect width="100%" height="100%" fill={`url(#${patId})`} />
+          </svg>
+        );
       case 'wongozhi-brick':
-        return 'pattern-wongozhi-brick';
+        return (
+          <svg
+            width="100%"
+            height="100%"
+            className="block w-full h-full"
+            style={isVertical ? { transform: 'scaleX(-1)' } : undefined}
+          >
+            <defs>
+              <pattern id={patId} width="40" height="40" patternUnits="userSpaceOnUse">
+                <rect x="0.5" y="0.5" width="39" height="39" fill="none" stroke="#B45309" strokeWidth="1.2" />
+              </pattern>
+            </defs>
+            <rect width="100%" height="100%" fill={`url(#${patId})`} />
+          </svg>
+        );
       case 'classical-vertical':
-        return 'pattern-classical-vertical';
+        return (
+          <svg
+            width="100%"
+            height="100%"
+            className="block w-full h-full"
+            style={isVertical ? { transform: 'scaleX(-1)' } : undefined}
+          >
+            <defs>
+              <pattern id={patId} width="48" height="100" patternUnits="userSpaceOnUse">
+                <line x1="0" y1="0" x2="0" y2="100" stroke="#B91C1C" strokeWidth="1.6" />
+              </pattern>
+            </defs>
+            <rect width="100%" height="100%" fill={`url(#${patId})`} />
+          </svg>
+        );
       case 'classical-vertical-slate':
-        return 'pattern-classical-vertical-slate';
+        return (
+          <svg
+            width="100%"
+            height="100%"
+            className="block w-full h-full"
+            style={isVertical ? { transform: 'scaleX(-1)' } : undefined}
+          >
+            <defs>
+              <pattern id={patId} width="48" height="100" patternUnits="userSpaceOnUse">
+                <line x1="0" y1="0" x2="0" y2="100" stroke="#1E293B" strokeWidth="1.6" />
+              </pattern>
+            </defs>
+            <rect width="100%" height="100%" fill={`url(#${patId})`} />
+          </svg>
+        );
       case 'tianzige':
-        return 'pattern-tianzige';
+        return (
+          <svg
+            width="100%"
+            height="100%"
+            className="block w-full h-full"
+            style={isVertical ? { transform: 'scaleX(-1)' } : undefined}
+          >
+            <defs>
+              <pattern id={patId} width="44" height="44" patternUnits="userSpaceOnUse">
+                <rect x="0.5" y="0.5" width="43" height="43" fill="none" stroke="#C62828" strokeWidth="1.3" />
+                <line x1="0" y1="22" x2="44" y2="22" stroke="#EF5350" strokeWidth="1" strokeDasharray="3,3" />
+                <line x1="22" y1="0" x2="22" y2="44" stroke="#EF5350" strokeWidth="1" strokeDasharray="3,3" />
+              </pattern>
+            </defs>
+            <rect width="100%" height="100%" fill={`url(#${patId})`} />
+          </svg>
+        );
       case 'mizige':
-        return 'pattern-mizige';
+        return (
+          <svg
+            width="100%"
+            height="100%"
+            className="block w-full h-full"
+            style={isVertical ? { transform: 'scaleX(-1)' } : undefined}
+          >
+            <defs>
+              <pattern id={patId} width="44" height="44" patternUnits="userSpaceOnUse">
+                <rect x="0.5" y="0.5" width="43" height="43" fill="none" stroke="#991B1B" strokeWidth="1.3" />
+                <line x1="0" y1="22" x2="44" y2="22" stroke="#DC2626" strokeWidth="1" strokeDasharray="3,3" />
+                <line x1="22" y1="0" x2="22" y2="44" stroke="#DC2626" strokeWidth="1" strokeDasharray="3,3" />
+                <line x1="0" y1="0" x2="44" y2="44" stroke="#F87171" strokeWidth="0.9" strokeDasharray="2.5,2.5" />
+                <line x1="44" y1="0" x2="0" y2="44" stroke="#F87171" strokeWidth="0.9" strokeDasharray="2.5,2.5" />
+              </pattern>
+            </defs>
+            <rect width="100%" height="100%" fill={`url(#${patId})`} />
+          </svg>
+        );
       case 'jiugongge':
-        return 'pattern-jiugongge';
+        return (
+          <svg
+            width="100%"
+            height="100%"
+            className="block w-full h-full"
+            style={isVertical ? { transform: 'scaleX(-1)' } : undefined}
+          >
+            <defs>
+              <pattern id={patId} width="48" height="48" patternUnits="userSpaceOnUse">
+                <rect x="0.5" y="0.5" width="47" height="47" fill="none" stroke="#1E293B" strokeWidth="1.3" />
+                <line x1="16" y1="0" x2="16" y2="48" stroke="#475569" strokeWidth="1" strokeDasharray="3,2" />
+                <line x1="32" y1="0" x2="32" y2="48" stroke="#475569" strokeWidth="1" strokeDasharray="3,2" />
+                <line x1="0" y1="16" x2="48" y2="16" stroke="#475569" strokeWidth="1" strokeDasharray="3,2" />
+                <line x1="0" y1="32" x2="48" y2="32" stroke="#475569" strokeWidth="1" strokeDasharray="3,2" />
+              </pattern>
+            </defs>
+            <rect width="100%" height="100%" fill={`url(#${patId})`} />
+          </svg>
+        );
       case 'huigongge':
-        return 'pattern-huigongge';
+        return (
+          <svg
+            width="100%"
+            height="100%"
+            className="block w-full h-full"
+            style={isVertical ? { transform: 'scaleX(-1)' } : undefined}
+          >
+            <defs>
+              <pattern id={patId} width="44" height="44" patternUnits="userSpaceOnUse">
+                <rect x="0.5" y="0.5" width="43" height="43" fill="none" stroke="#1D4ED8" strokeWidth="1.3" />
+                <rect x="10.5" y="10.5" width="23" height="23" fill="none" stroke="#38BDF8" strokeWidth="1.1" strokeDasharray="3,2" />
+              </pattern>
+            </defs>
+            <rect width="100%" height="100%" fill={`url(#${patId})`} />
+          </svg>
+        );
       case 'quadretti-5mm':
-        return 'pattern-quadretti-5mm';
+        return (
+          <svg
+            width="100%"
+            height="100%"
+            className="block w-full h-full"
+            style={isVertical ? { transform: 'scaleX(-1)' } : undefined}
+          >
+            <defs>
+              <pattern id={patId} width="24" height="24" patternUnits="userSpaceOnUse">
+                <rect x="0.5" y="0.5" width="23" height="23" fill="none" stroke="#60A5FA" strokeWidth="0.9" strokeOpacity="0.75" />
+              </pattern>
+            </defs>
+            <rect width="100%" height="100%" fill={`url(#${patId})`} />
+          </svg>
+        );
       case 'quadretti-10mm':
-        return 'pattern-quadretti-10mm';
+        return (
+          <svg
+            width="100%"
+            height="100%"
+            className="block w-full h-full"
+            style={isVertical ? { transform: 'scaleX(-1)' } : undefined}
+          >
+            <defs>
+              <pattern id={patId} width="48" height="48" patternUnits="userSpaceOnUse">
+                <rect x="0.5" y="0.5" width="47" height="47" fill="none" stroke="#2563EB" strokeWidth="1.2" strokeOpacity="0.85" />
+              </pattern>
+            </defs>
+            <rect width="100%" height="100%" fill={`url(#${patId})`} />
+          </svg>
+        );
       case 'classical-horizontal':
-        return 'pattern-classical-horizontal';
+        return (
+          <svg width="100%" height="100%" className="block w-full h-full">
+            <defs>
+              <pattern id={patId} width="100" height="36" patternUnits="userSpaceOnUse">
+                <line x1="0" y1="35.5" x2="100" y2="35.5" stroke="#475569" strokeWidth="1" />
+              </pattern>
+            </defs>
+            <rect width="100%" height="100%" fill={`url(#${patId})`} />
+          </svg>
+        );
       default:
-        return '';
+        return null;
     }
   };
 
@@ -1873,6 +2034,8 @@ export const DocumentPaper: React.FC<DocumentPaperProps> = ({
               id={pageElId}
               data-writing-mode={doc.writingMode}
               data-paper-format={doc.paperFormat}
+              data-paper-style={doc.paperStyle}
+              data-grid-opacity={doc.gridOpacity ?? 0.55}
               onClick={() => onSelectPage?.(page.id)}
               style={{
                 width: `${pageDim.width}px`,
@@ -1897,6 +2060,17 @@ export const DocumentPaper: React.FC<DocumentPaperProps> = ({
                   : 'border-stone-200/80'
               }`}
             >
+              {/* Foreground SVG paper tint so non-white paper backgrounds also print when "Background graphics" is disabled */}
+              {paperBgHex !== '#FFFFFF' && (
+                <svg
+                  className="paper-tint-overlay absolute inset-0 w-full h-full pointer-events-none z-0"
+                  preserveAspectRatio="none"
+                  viewBox="0 0 100 100"
+                  aria-hidden="true"
+                >
+                  <rect width="100" height="100" fill={paperBgHex} />
+                </svg>
+              )}
               {/* Margin Visual Guide Rectangle (active when settings panel is open) */}
               {showMarginGuides && (
                 <div
@@ -1917,6 +2091,7 @@ export const DocumentPaper: React.FC<DocumentPaperProps> = ({
               {/* Running Header */}
               {doc.headerText && (
                 <div
+                  data-print-header="true"
                   className="relative z-10 text-stone-400 text-xs font-serif tracking-widest pb-2 mb-2 border-b border-stone-200/60 flex items-center justify-between select-none shrink-0"
                   style={{
                     writingMode: 'horizontal-tb',
@@ -1935,15 +2110,20 @@ export const DocumentPaper: React.FC<DocumentPaperProps> = ({
                 onClick={handlePageAreaClick}
               >
                 {/* Grid / Ruled Lines Overlay strictly bounded within the content container */}
-                {getPatternClass() && (
-                  <div
-                    className={`grid-pattern-overlay absolute inset-0 pointer-events-none transition-opacity ${getPatternClass()}`}
-                    style={{
-                      opacity: doc.gridOpacity ?? 0.55,
-                      backgroundPosition: isVertical ? 'right top' : 'left top',
-                    }}
-                  />
-                )}
+                {(() => {
+                  const gridSvg = renderGridPatternSvg(page.id);
+                  if (!gridSvg) return null;
+                  return (
+                    <div
+                      className="grid-pattern-overlay absolute inset-0 pointer-events-none transition-opacity"
+                      style={{
+                        opacity: doc.gridOpacity ?? 0.55,
+                      }}
+                    >
+                      {gridSvg}
+                    </div>
+                  );
+                })()}
 
                 {/* Traditional Outer Border */}
                 {(doc.paperStyle === 'wongozhi' ||
@@ -2037,7 +2217,8 @@ export const DocumentPaper: React.FC<DocumentPaperProps> = ({
               {/* Running Footer */}
               {(doc.footerText || doc.showPageNumbers) && (
                 <div
-                  className="text-stone-400 text-xs font-serif tracking-widest pt-3 mt-2 border-t border-stone-200/60 flex items-center justify-between select-none"
+                  data-print-footer="true"
+                  className="relative z-10 text-stone-400 text-xs font-serif tracking-widest pt-3 mt-2 border-t border-stone-200/60 flex items-center justify-between select-none"
                   style={{
                     writingMode: 'horizontal-tb',
                   }}

@@ -325,9 +325,14 @@ rt {
     page-break-inside: avoid;
   }
 
+  .paper-tint-overlay,
   .grid-pattern-overlay,
   .traditional-border-overlay {
     display: block !important;
+    position: absolute !important;
+    inset: 0 !important;
+    width: 100% !important;
+    height: 100% !important;
     -webkit-print-color-adjust: exact !important;
     print-color-adjust: exact !important;
   }

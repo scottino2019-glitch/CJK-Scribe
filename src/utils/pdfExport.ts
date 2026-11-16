@@ -1,10 +1,15 @@
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas-pro';
+import { PaperStyle, WritingMode } from '../types/editor';
+import { getPaperBaseColorHex } from './gridAlignment';
 
 export interface ExportPdfOptions {
   filename?: string;
   format?: 'A4' | 'B5' | 'Letter';
+  paperStyle?: PaperStyle;
   paperBgColor?: string;
+  gridOpacity?: number;
+  writingMode?: WritingMode;
   marginMm?: number;
   onProgress?: (progress: number, stage: string) => void;
 }
@@ -421,6 +426,263 @@ function normalizeHorizontalRubyInClone(clonedDoc: Document, root: HTMLElement) 
   }
 }
 
+function drawPaperGridAndBorder(
+  ctx: CanvasRenderingContext2D,
+  opts: {
+    paperStyle: PaperStyle;
+    paperBgColor: string;
+    writingMode: WritingMode;
+    gridOpacity: number;
+    marginPx: number;
+    headerOffsetPx: number;
+    footerOffsetPx: number;
+    canvasWidthPx: number;
+    canvasHeightPx: number;
+    scale: number;
+  }
+) {
+  const {
+    paperStyle,
+    paperBgColor,
+    writingMode,
+    gridOpacity,
+    marginPx,
+    headerOffsetPx,
+    footerOffsetPx,
+    canvasWidthPx,
+    canvasHeightPx,
+    scale,
+  } = opts;
+
+  ctx.save();
+  ctx.fillStyle = paperBgColor || getPaperBaseColorHex(paperStyle);
+  ctx.fillRect(0, 0, canvasWidthPx, canvasHeightPx);
+
+  if (paperStyle === 'plain' || paperStyle === 'xuan' || paperStyle === 'hanji') {
+    ctx.restore();
+    return;
+  }
+
+  const gx = marginPx * scale;
+  const gy = (marginPx + headerOffsetPx) * scale;
+  const gw = Math.max(10, canvasWidthPx - 2 * marginPx * scale);
+  const gh = Math.max(
+    10,
+    canvasHeightPx - gy - (marginPx + footerOffsetPx) * scale
+  );
+  const isVertical = writingMode === 'vertical-rl';
+
+  const drawGridPattern = () => {
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(gx, gy, gw, gh);
+    ctx.clip();
+    ctx.globalAlpha = Math.max(0.05, Math.min(1, gridOpacity));
+
+    if (paperStyle === 'classical-vertical' || paperStyle === 'classical-vertical-slate') {
+      const pitch = 48 * scale;
+      ctx.strokeStyle =
+        paperStyle === 'classical-vertical-slate' ? '#1E293B' : '#B91C1C';
+      ctx.lineWidth = 1.6 * scale;
+      if (isVertical) {
+        for (let x = gx + gw - pitch; x > gx; x -= pitch) {
+          ctx.beginPath();
+          ctx.moveTo(x, gy);
+          ctx.lineTo(x, gy + gh);
+          ctx.stroke();
+        }
+      } else {
+        for (let x = gx + pitch; x < gx + gw; x += pitch) {
+          ctx.beginPath();
+          ctx.moveTo(x, gy);
+          ctx.lineTo(x, gy + gh);
+          ctx.stroke();
+        }
+      }
+      ctx.restore();
+      return;
+    }
+
+    if (paperStyle === 'classical-horizontal') {
+      const pitch = 36 * scale;
+      ctx.strokeStyle = '#475569';
+      ctx.lineWidth = 1 * scale;
+      for (let y = gy + pitch; y <= gy + gh + 1; y += pitch) {
+        ctx.beginPath();
+        ctx.moveTo(gx, y - 0.5 * scale);
+        ctx.lineTo(gx + gw, y - 0.5 * scale);
+        ctx.stroke();
+      }
+      ctx.restore();
+      return;
+    }
+
+    const pitchCss =
+      paperStyle === 'wongozhi' || paperStyle === 'wongozhi-brick'
+        ? 40
+        : paperStyle === 'jiugongge' || paperStyle === 'quadretti-10mm'
+        ? 48
+        : paperStyle === 'quadretti-5mm'
+        ? 24
+        : 44;
+    const pitch = pitchCss * scale;
+
+    const colsStart = isVertical
+      ? (() => {
+          const xs: number[] = [];
+          for (let x = gx + gw - pitch; x > gx - pitch; x -= pitch) xs.push(x);
+          return xs;
+        })()
+      : (() => {
+          const xs: number[] = [];
+          for (let x = gx; x < gx + gw; x += pitch) xs.push(x);
+          return xs;
+        })();
+
+    for (const x of colsStart) {
+      for (let y = gy; y < gy + gh; y += pitch) {
+        if (paperStyle === 'wongozhi' || paperStyle === 'wongozhi-brick') {
+          ctx.strokeStyle = paperStyle === 'wongozhi' ? '#15803D' : '#B45309';
+          ctx.lineWidth = 1.2 * scale;
+          ctx.strokeRect(
+            x + 0.5 * scale,
+            y + 0.5 * scale,
+            pitch - 1 * scale,
+            pitch - 1 * scale
+          );
+        } else if (paperStyle === 'tianzige' || paperStyle === 'mizige') {
+          const isMizi = paperStyle === 'mizige';
+          ctx.strokeStyle = isMizi ? '#991B1B' : '#C62828';
+          ctx.lineWidth = 1.3 * scale;
+          ctx.setLineDash([]);
+          ctx.strokeRect(
+            x + 0.5 * scale,
+            y + 0.5 * scale,
+            pitch - 1 * scale,
+            pitch - 1 * scale
+          );
+
+          ctx.strokeStyle = isMizi ? '#DC2626' : '#EF5350';
+          ctx.lineWidth = 1 * scale;
+          ctx.setLineDash([3 * scale, 3 * scale]);
+          ctx.beginPath();
+          ctx.moveTo(x, y + pitch / 2);
+          ctx.lineTo(x + pitch, y + pitch / 2);
+          ctx.moveTo(x + pitch / 2, y);
+          ctx.lineTo(x + pitch / 2, y + pitch);
+          ctx.stroke();
+
+          if (isMizi) {
+            ctx.strokeStyle = '#F87171';
+            ctx.lineWidth = 0.9 * scale;
+            ctx.setLineDash([2.5 * scale, 2.5 * scale]);
+            ctx.beginPath();
+            ctx.moveTo(x, y);
+            ctx.lineTo(x + pitch, y + pitch);
+            ctx.moveTo(x + pitch, y);
+            ctx.lineTo(x, y + pitch);
+            ctx.stroke();
+          }
+          ctx.setLineDash([]);
+        } else if (paperStyle === 'jiugongge') {
+          ctx.strokeStyle = '#1E293B';
+          ctx.lineWidth = 1.3 * scale;
+          ctx.setLineDash([]);
+          ctx.strokeRect(
+            x + 0.5 * scale,
+            y + 0.5 * scale,
+            pitch - 1 * scale,
+            pitch - 1 * scale
+          );
+
+          ctx.strokeStyle = '#475569';
+          ctx.lineWidth = 1 * scale;
+          ctx.setLineDash([3 * scale, 2 * scale]);
+          const third = pitch / 3;
+          ctx.beginPath();
+          ctx.moveTo(x + third, y);
+          ctx.lineTo(x + third, y + pitch);
+          ctx.moveTo(x + third * 2, y);
+          ctx.lineTo(x + third * 2, y + pitch);
+          ctx.moveTo(x, y + third);
+          ctx.lineTo(x + pitch, y + third);
+          ctx.moveTo(x, y + third * 2);
+          ctx.lineTo(x + pitch, y + third * 2);
+          ctx.stroke();
+          ctx.setLineDash([]);
+        } else if (paperStyle === 'huigongge') {
+          ctx.strokeStyle = '#1D4ED8';
+          ctx.lineWidth = 1.3 * scale;
+          ctx.setLineDash([]);
+          ctx.strokeRect(
+            x + 0.5 * scale,
+            y + 0.5 * scale,
+            pitch - 1 * scale,
+            pitch - 1 * scale
+          );
+
+          ctx.strokeStyle = '#38BDF8';
+          ctx.lineWidth = 1.1 * scale;
+          ctx.setLineDash([3 * scale, 2 * scale]);
+          ctx.strokeRect(
+            x + 10.5 * scale,
+            y + 10.5 * scale,
+            23 * scale,
+            23 * scale
+          );
+          ctx.setLineDash([]);
+        } else if (paperStyle === 'quadretti-5mm' || paperStyle === 'quadretti-10mm') {
+          const is5 = paperStyle === 'quadretti-5mm';
+          ctx.save();
+          ctx.globalAlpha = Math.max(0.05, Math.min(1, gridOpacity)) * (is5 ? 0.75 : 0.85);
+          ctx.strokeStyle = is5 ? '#60A5FA' : '#2563EB';
+          ctx.lineWidth = (is5 ? 0.9 : 1.2) * scale;
+          ctx.strokeRect(
+            x + 0.5 * scale,
+            y + 0.5 * scale,
+            pitch - 1 * scale,
+            pitch - 1 * scale
+          );
+          ctx.restore();
+        }
+      }
+    }
+
+    ctx.restore();
+  };
+
+  drawGridPattern();
+
+  // Traditional outer frame border for Wongozhi and Zhu Si Lan / Wu Si Lan
+  if (
+    paperStyle === 'wongozhi' ||
+    paperStyle === 'wongozhi-brick' ||
+    paperStyle === 'classical-vertical' ||
+    paperStyle === 'classical-vertical-slate'
+  ) {
+    ctx.save();
+    ctx.globalAlpha = Math.max(0.05, Math.min(1, gridOpacity));
+    ctx.strokeStyle =
+      paperStyle === 'wongozhi'
+        ? 'rgba(34, 110, 40, 0.8)'
+        : paperStyle === 'wongozhi-brick'
+        ? 'rgba(160, 75, 35, 0.8)'
+        : paperStyle === 'classical-vertical-slate'
+        ? 'rgba(30, 41, 59, 0.8)'
+        : 'rgba(195, 35, 30, 0.8)';
+    ctx.lineWidth = 1.5 * scale;
+    ctx.strokeRect(
+      gx + 0.75 * scale,
+      gy + 0.75 * scale,
+      gw - 1.5 * scale,
+      gh - 1.5 * scale
+    );
+    ctx.restore();
+  }
+
+  ctx.restore();
+}
+
 export async function exportDocumentToPdf(
   elementIds: string[],
   options: ExportPdfOptions = {}
@@ -428,7 +690,10 @@ export async function exportDocumentToPdf(
   const {
     filename = 'cjk_document.pdf',
     format = 'A4',
-    paperBgColor = '#ffffff',
+    paperStyle: optionPaperStyle,
+    paperBgColor: optionPaperBgColor,
+    gridOpacity: optionGridOpacity,
+    writingMode: optionWritingMode,
     marginMm = 20,
     onProgress,
   } = options;
@@ -489,9 +754,31 @@ export async function exportDocumentToPdf(
       }
 
       const marginPx = Math.round(marginMm * 3.7795);
-      const isVerticalPage =
-        el.getAttribute('data-writing-mode') === 'vertical-rl' ||
-        !!el.querySelector('.vertical-writing-upright, .vertical-writing-mixed');
+      const pagePaperStyle =
+        (el.getAttribute('data-paper-style') as PaperStyle | null) ||
+        optionPaperStyle ||
+        'plain';
+      const paperBgColor =
+        optionPaperBgColor || getPaperBaseColorHex(pagePaperStyle);
+      const parsedOpacity = parseFloat(el.getAttribute('data-grid-opacity') || '');
+      const pageGridOpacity =
+        optionGridOpacity ?? (Number.isFinite(parsedOpacity) ? parsedOpacity : 0.55);
+      const pageWritingMode: WritingMode =
+        (el.getAttribute('data-writing-mode') as WritingMode | null) ||
+        optionWritingMode ||
+        (el.querySelector('.vertical-writing-upright, .vertical-writing-mixed')
+          ? 'vertical-rl'
+          : 'horizontal-tb');
+      const isVerticalPage = pageWritingMode === 'vertical-rl';
+
+      const liveHeader = el.querySelector('[data-print-header="true"]') as HTMLElement | null;
+      const liveFooter = el.querySelector('[data-print-footer="true"]') as HTMLElement | null;
+      const headerOffsetPx = liveHeader
+        ? Math.ceil(liveHeader.getBoundingClientRect().height + 8)
+        : 0;
+      const footerOffsetPx = liveFooter
+        ? Math.ceil(liveFooter.getBoundingClientRect().height + 8)
+        : 0;
 
       // Tag & snapshot all vertical-writing blocks + vertical seal texts BEFORE cloning
       const blockSnapshots = new Map<string, VerticalContainerSnapshot>();
@@ -540,7 +827,7 @@ export async function exportDocumentToPdf(
           useCORS: true,
           allowTaint: true,
           logging: false,
-          backgroundColor: paperBgColor,
+          backgroundColor: null as unknown as string,
           ignoreElements: (element) => {
             return (
               element.classList?.contains('no-print') ||
@@ -730,31 +1017,11 @@ export async function exportDocumentToPdf(
               img.style.objectFit = 'contain';
             });
 
-            // Force grid and traditional border overlays to fill their container cleanly
-            const gridPattern = clonedPage.querySelector('.grid-pattern-overlay') as HTMLElement | null;
-            if (gridPattern) {
-              gridPattern.style.top = '0px';
-              gridPattern.style.left = '0px';
-              gridPattern.style.right = '0px';
-              gridPattern.style.bottom = '0px';
-              gridPattern.style.width = '100%';
-              gridPattern.style.height = '100%';
-              gridPattern.style.position = 'absolute';
-              gridPattern.style.display = 'block';
-              gridPattern.style.pointerEvents = 'none';
-            }
-
-            const borderOverlay = clonedPage.querySelector('.traditional-border-overlay') as HTMLElement | null;
-            if (borderOverlay) {
-              borderOverlay.style.top = '0px';
-              borderOverlay.style.left = '0px';
-              borderOverlay.style.right = '0px';
-              borderOverlay.style.bottom = '0px';
-              borderOverlay.style.width = '100%';
-              borderOverlay.style.height = '100%';
-              borderOverlay.style.position = 'absolute';
-              borderOverlay.style.display = 'block';
-            }
+            // Remove live grid/border/tint overlays from html2canvas clone;
+            // we render crisp vector grid + paper tint directly onto each final PDF sheet canvas
+            clonedPage
+              .querySelectorAll('.paper-tint-overlay, .grid-pattern-overlay, .traditional-border-overlay')
+              .forEach((ov) => ov.remove());
 
             // Isolate clonedPage at (0, 0) in clonedDoc.body so parent scroll/flex wrappers never offset it
             clonedDoc.documentElement.style.margin = '0';
@@ -762,13 +1029,14 @@ export async function exportDocumentToPdf(
             clonedDoc.documentElement.style.overflow = 'visible';
             clonedDoc.documentElement.style.width = `${spec.widthPx}px`;
             clonedDoc.documentElement.style.height = 'auto';
+            clonedDoc.documentElement.style.backgroundColor = 'transparent';
 
             clonedDoc.body.style.margin = '0';
             clonedDoc.body.style.padding = '0';
             clonedDoc.body.style.overflow = 'visible';
             clonedDoc.body.style.width = `${spec.widthPx}px`;
             clonedDoc.body.style.height = 'auto';
-            clonedDoc.body.style.backgroundColor = paperBgColor;
+            clonedDoc.body.style.backgroundColor = 'transparent';
             clonedDoc.body.style.display = 'block';
             clonedDoc.body.replaceChildren(clonedPage);
 
@@ -789,7 +1057,7 @@ export async function exportDocumentToPdf(
             clonedPage.style.maxHeight = 'none';
             clonedPage.style.boxSizing = 'border-box';
             clonedPage.style.overflow = 'visible';
-            clonedPage.style.backgroundColor = paperBgColor;
+            clonedPage.style.backgroundColor = 'transparent';
             clonedPage.style.padding = `${marginPx}px`;
 
             // Smart horizontal pagination so blocks/list items don't get cut mid-line across PDF pages
@@ -842,101 +1110,67 @@ export async function exportDocumentToPdf(
       }
 
       // Always render at exact 100% page width (NEVER shrink width into centered mini-column!)
+      // Composite crisp vector paper tint + grid/border behind the transparent html2canvas foreground
       const scaleFactor = canvas.width / spec.widthPx;
       const sliceHeightPx = Math.round(canvas.width * (pageHeight / pageWidth));
       const smallOverflowTolerancePx = Math.round(18 * scaleFactor);
 
-      if (canvas.height <= sliceHeightPx + smallOverflowTolerancePx) {
+      const renderCompositeSlice = (
+        sy: number,
+        sh: number,
+        sliceIndex: number,
+        totalSlices: number
+      ) => {
+        const sheetCanvas = document.createElement('canvas');
+        sheetCanvas.width = canvas.width;
+        sheetCanvas.height = sliceHeightPx;
+        const ctx = sheetCanvas.getContext('2d');
+        if (ctx) {
+          drawPaperGridAndBorder(ctx, {
+            paperStyle: pagePaperStyle,
+            paperBgColor,
+            writingMode: pageWritingMode,
+            gridOpacity: pageGridOpacity,
+            marginPx,
+            headerOffsetPx: sliceIndex === 0 ? headerOffsetPx : 0,
+            footerOffsetPx: sliceIndex === totalSlices - 1 ? footerOffsetPx : 0,
+            canvasWidthPx: sheetCanvas.width,
+            canvasHeightPx: sheetCanvas.height,
+            scale: scaleFactor,
+          });
+          ctx.drawImage(canvas, 0, sy, canvas.width, sh, 0, 0, canvas.width, sh);
+        }
         if (renderedCount > 0) {
           pdf.addPage(spec.jsPdfFormat, 'portrait');
         }
-
-        if (canvas.height > sliceHeightPx) {
-          const cropped = document.createElement('canvas');
-          cropped.width = canvas.width;
-          cropped.height = sliceHeightPx;
-          const ctx = cropped.getContext('2d');
-          if (ctx) {
-            ctx.fillStyle = paperBgColor;
-            ctx.fillRect(0, 0, cropped.width, cropped.height);
-            ctx.drawImage(
-              canvas,
-              0,
-              0,
-              canvas.width,
-              sliceHeightPx,
-              0,
-              0,
-              canvas.width,
-              sliceHeightPx
-            );
-            pdf.addImage(
-              cropped.toDataURL('image/png'),
-              'PNG',
-              0,
-              0,
-              pageWidth,
-              pageHeight,
-              undefined,
-              'FAST'
-            );
-          } else {
-            pdf.addImage(
-              canvas.toDataURL('image/png'),
-              'PNG',
-              0,
-              0,
-              pageWidth,
-              pageHeight,
-              undefined,
-              'FAST'
-            );
-          }
-        } else {
-          const drawH = Math.min(pageHeight, (canvas.height / canvas.width) * pageWidth);
-          pdf.addImage(
-            canvas.toDataURL('image/png'),
-            'PNG',
-            0,
-            0,
-            pageWidth,
-            drawH,
-            undefined,
-            'FAST'
-          );
-        }
+        pdf.addImage(
+          sheetCanvas.toDataURL('image/png'),
+          'PNG',
+          0,
+          0,
+          pageWidth,
+          pageHeight,
+          undefined,
+          'FAST'
+        );
         renderedCount++;
+      };
+
+      if (canvas.height <= sliceHeightPx + smallOverflowTolerancePx) {
+        const sh = Math.min(canvas.height, sliceHeightPx);
+        renderCompositeSlice(0, sh, 0, 1);
       } else {
+        const sliceOffsets: Array<{ sy: number; sh: number }> = [];
         for (let sy = 0; sy < canvas.height; sy += sliceHeightPx) {
           const remaining = canvas.height - sy;
           if (sy > 0 && remaining < smallOverflowTolerancePx) {
             break;
           }
-          const sh = Math.min(sliceHeightPx, remaining);
-          const sliceCanvas = document.createElement('canvas');
-          sliceCanvas.width = canvas.width;
-          sliceCanvas.height = sliceHeightPx;
-          const ctx = sliceCanvas.getContext('2d');
-          if (ctx) {
-            ctx.fillStyle = paperBgColor;
-            ctx.fillRect(0, 0, sliceCanvas.width, sliceCanvas.height);
-            ctx.drawImage(canvas, 0, sy, canvas.width, sh, 0, 0, canvas.width, sh);
-          }
-          if (renderedCount > 0) {
-            pdf.addPage(spec.jsPdfFormat, 'portrait');
-          }
-          pdf.addImage(
-            sliceCanvas.toDataURL('image/png'),
-            'PNG',
-            0,
-            0,
-            pageWidth,
-            pageHeight,
-            undefined,
-            'FAST'
-          );
-          renderedCount++;
+          sliceOffsets.push({ sy, sh: Math.min(sliceHeightPx, remaining) });
         }
+        sliceOffsets.forEach((slice, idx) => {
+          renderCompositeSlice(slice.sy, slice.sh, idx, sliceOffsets.length);
+        });
       }
     }
 

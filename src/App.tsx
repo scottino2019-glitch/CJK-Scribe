@@ -1098,7 +1098,10 @@ export default function App() {
       const result = await exportDocumentToPdf(pageElementIds, {
         filename: `${cleanTitle}.pdf`,
         format: doc.paperFormat,
+        paperStyle: doc.paperStyle,
         paperBgColor,
+        gridOpacity: doc.gridOpacity ?? 0.55,
+        writingMode: doc.writingMode,
         marginMm: doc.marginMm,
         onProgress: (_, stage) => setExportStage(stage),
       });
