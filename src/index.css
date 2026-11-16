@@ -109,6 +109,7 @@ rt {
   font-weight: 500;
   color: #57534e;
   user-select: none;
+  pointer-events: none;
   letter-spacing: 0.02em;
 }
 
@@ -234,35 +235,56 @@ rt {
 
 /* Printable PDF Output Styles */
 @media print {
-  body {
-    background-color: #ffffff !important;
-    color: #000000 !important;
+  html,
+  body,
+  #root,
+  .app-shell,
+  .workspace-container,
+  .print-area,
+  .print-page-wrapper {
+    display: block !important;
+    position: static !important;
+    width: 100% !important;
+    max-width: none !important;
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    overflow: visible !important;
     margin: 0 !important;
     padding: 0 !important;
+    background-color: #ffffff !important;
+    box-shadow: none !important;
+    border: none !important;
+    border-radius: 0 !important;
+  }
+
+  body {
+    color: #000000 !important;
   }
 
   .no-print {
     display: none !important;
   }
 
-  .print-area {
-    width: 100% !important;
-    max-width: none !important;
-    margin: 0 !important;
-    padding: 0 !important;
-    box-shadow: none !important;
-    border: none !important;
-    border-radius: 0 !important;
-    overflow: visible !important;
+  .print-page-wrapper {
+    page-break-after: always;
+    break-after: page;
+  }
+
+  .print-page-wrapper:last-of-type {
+    page-break-after: auto;
+    break-after: auto;
   }
 
   .print-page {
     box-shadow: none !important;
     border: none !important;
     border-radius: 0 !important;
+    outline: none !important;
     margin: 0 auto !important;
-    page-break-after: always;
-    break-after: page;
+    overflow: visible !important;
+    page-break-inside: avoid;
+    break-inside: avoid;
     -webkit-print-color-adjust: exact !important;
     print-color-adjust: exact !important;
   }

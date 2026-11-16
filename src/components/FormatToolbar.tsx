@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   WritingMode,
   PaperStyle,
@@ -14,11 +14,10 @@ import {
 import {
   applyStyleToSelection,
   hasActiveSelection,
+  SelectionStyleState,
+  fontsMatch,
+  extractPrimaryFontName,
 } from '../utils/textFormatting';
-import {
-  PAPER_GRID_SPECS,
-  isCursiveFont,
-} from '../utils/gridAlignment';
 
 const COMMON_FONT_SIZES = [
   10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 24, 26, 28, 30, 32, 36, 40, 44, 48, 56, 64, 72,
@@ -36,6 +35,8 @@ import {
   Minus,
   Image as ImageIcon,
   ChevronDown,
+  ChevronUp,
+  Copy,
   Undo2,
   Redo2,
   Trash2,
@@ -44,6 +45,7 @@ import {
   Type,
   Layers,
   Sparkles,
+  Check,
 } from 'lucide-react';
 
 interface FormatToolbarProps {
@@ -70,6 +72,7 @@ interface FormatToolbarProps {
   onOpenRubyModal: () => void;
   onOpenSealModal: () => void;
   onOpenTableModal: () => void;
+  onInsertParagraph?: () => void;
   onInsertList: (style?: ListNumberingType) => void;
   onInsertDivider: () => void;
   onInsertImage: () => void;
@@ -85,11 +88,14 @@ interface FormatToolbarProps {
   onRedo?: () => void;
   canDelete?: boolean;
   onDeleteActiveBlock?: () => void;
+  onMoveActiveBlock?: (direction: 'up' | 'down') => void;
+  onDuplicateActiveBlock?: () => void;
   onClearSheet?: () => void;
   onOpenSettings?: () => void;
   onAlignTextToGrid?: () => void;
   activeBlockId?: string | null;
   onUpdateBlockContent?: (blockId: string, content: string) => void;
+  selectionStyle?: SelectionStyleState | null;
 }
 
 export const FormatToolbar: React.FC<FormatToolbarProps> = ({
@@ -116,6 +122,7 @@ export const FormatToolbar: React.FC<FormatToolbarProps> = ({
   onOpenRubyModal,
   onOpenSealModal,
   onOpenTableModal,
+  onInsertParagraph,
   onInsertList,
   onInsertDivider,
   onInsertImage,
@@ -131,24 +138,69 @@ export const FormatToolbar: React.FC<FormatToolbarProps> = ({
   onRedo,
   canDelete = false,
   onDeleteActiveBlock,
+  onMoveActiveBlock,
+  onDuplicateActiveBlock,
   onClearSheet,
   onOpenSettings,
   onAlignTextToGrid,
   activeBlockId,
   onUpdateBlockContent,
+  selectionStyle,
 }) => {
   const [showColorPopover, setShowColorPopover] = useState(false);
   const [showListDropdown, setShowListDropdown] = useState(false);
+  const [showFontDropdown, setShowFontDropdown] = useState(false);
+  const [showSizeDropdown, setShowSizeDropdown] = useState(false);
   const [mobileTab, setMobileTab] = useState<'font' | 'paper' | 'insert' | 'actions'>('font');
   const [alignedFeedback, setAlignedFeedback] = useState(false);
 
+  const toolbarRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleOutsideMouseDown = (e: MouseEvent) => {
+      if (toolbarRef.current && !toolbarRef.current.contains(e.target as Node)) {
+        setShowColorPopover(false);
+        setShowListDropdown(false);
+        setShowFontDropdown(false);
+        setShowSizeDropdown(false);
+      }
+    };
+    document.addEventListener('mousedown', handleOutsideMouseDown);
+    return () => document.removeEventListener('mousedown', handleOutsideMouseDown);
+  }, []);
+
   const isTableActive = activeBlockType === 'table';
+  const isListActive = activeBlockType === 'list';
+
+  const isSelInActiveContext =
+    !!selectionStyle && !!activeBlockId && selectionStyle.blockId === activeBlockId;
+
+  const isTextSelected =
+    (isSelInActiveContext && !!selectionStyle?.hasSelection) ||
+    hasActiveSelection(activeBlockId);
+
+  const displayedFontSize =
+    (isSelInActiveContext && selectionStyle?.fontSize) || activeFontSize;
+  const displayedFontFamily =
+    (isSelInActiveContext && selectionStyle?.fontFamily) || activeFontFamily;
+  const displayedColor =
+    (isSelInActiveContext && selectionStyle?.color) || activeColor;
+
+  const matchedFontDef = CJK_FONTS.find((f) =>
+    fontsMatch(f.cssFamily, displayedFontFamily)
+  );
+  const displayedFontLabel =
+    matchedFontDef?.nativeName ||
+    extractPrimaryFontName(displayedFontFamily) ||
+    'Seleziona Font';
 
   const handleFontSelect = (fontCss: string) => {
-    if (hasActiveSelection()) {
+    if (hasActiveSelection(activeBlockId)) {
       const res = applyStyleToSelection({ fontFamily: fontCss }, activeBlockId);
-      if (res && onUpdateBlockContent) {
-        onUpdateBlockContent(res.blockId, res.newHtml);
+      if (res) {
+        if (!res.isCell && res.blockId && onUpdateBlockContent) {
+          onUpdateBlockContent(res.blockId, res.newHtml);
+        }
         return;
       }
     }
@@ -157,27 +209,36 @@ export const FormatToolbar: React.FC<FormatToolbarProps> = ({
 
   const handleFontSizeSelect = (size: number) => {
     const boundedSize = Math.max(10, Math.min(72, size));
-    if (hasActiveSelection()) {
+    if (hasActiveSelection(activeBlockId)) {
       const res = applyStyleToSelection({ fontSize: boundedSize }, activeBlockId);
-      if (res && onUpdateBlockContent) {
-        onUpdateBlockContent(res.blockId, res.newHtml);
+      if (res) {
+        if (!res.isCell && res.blockId && onUpdateBlockContent) {
+          onUpdateBlockContent(res.blockId, res.newHtml);
+        }
+        return;
       }
     }
     onFontSizeChange(boundedSize);
   };
 
   const handleColorSelect = (colorHex: string) => {
-    if (hasActiveSelection()) {
+    if (hasActiveSelection(activeBlockId)) {
       const res = applyStyleToSelection({ color: colorHex }, activeBlockId);
-      if (res && onUpdateBlockContent) {
-        onUpdateBlockContent(res.blockId, res.newHtml);
+      if (res) {
+        if (!res.isCell && res.blockId && onUpdateBlockContent) {
+          onUpdateBlockContent(res.blockId, res.newHtml);
+        }
+        return;
       }
     }
     onColorChange(colorHex);
   };
 
   return (
-    <div className="no-print bg-stone-50 border-b border-stone-200 px-3 sm:px-4 py-2 text-stone-700 shadow-2xs">
+    <div
+      ref={toolbarRef}
+      className="no-print bg-stone-50 border-b border-stone-200 px-3 sm:px-4 py-2 text-stone-700 shadow-2xs"
+    >
       {/* Mobile Toolbar Category Switcher (Visible on small screens) */}
       <div className="flex md:hidden items-center justify-between gap-1 pb-2 mb-2 border-b border-stone-200/70 overflow-x-auto text-xs font-medium">
         <div className="flex items-center gap-1">
@@ -279,6 +340,39 @@ export const FormatToolbar: React.FC<FormatToolbarProps> = ({
             <Redo2 className="w-3.5 h-3.5" />
           </button>
           <div className="h-4 w-px bg-stone-200 mx-0.5" />
+          {onMoveActiveBlock && (
+            <>
+              <button
+                type="button"
+                onClick={() => onMoveActiveBlock('up')}
+                disabled={!canDelete}
+                className="p-1.5 text-stone-600 hover:text-stone-900 hover:bg-stone-100 rounded disabled:opacity-30 transition-colors"
+                title="Sposta blocco selezionato prima"
+              >
+                <ChevronUp className="w-3.5 h-3.5" />
+              </button>
+              <button
+                type="button"
+                onClick={() => onMoveActiveBlock('down')}
+                disabled={!canDelete}
+                className="p-1.5 text-stone-600 hover:text-stone-900 hover:bg-stone-100 rounded disabled:opacity-30 transition-colors"
+                title="Sposta blocco selezionato dopo"
+              >
+                <ChevronDown className="w-3.5 h-3.5" />
+              </button>
+            </>
+          )}
+          {onDuplicateActiveBlock && (
+            <button
+              type="button"
+              onClick={onDuplicateActiveBlock}
+              disabled={!canDelete}
+              className="p-1.5 text-stone-600 hover:text-stone-900 hover:bg-stone-100 rounded disabled:opacity-30 transition-colors"
+              title="Duplica blocco selezionato"
+            >
+              <Copy className="w-3.5 h-3.5" />
+            </button>
+          )}
           <button
             type="button"
             onClick={onDeleteActiveBlock}
@@ -412,101 +506,171 @@ export const FormatToolbar: React.FC<FormatToolbarProps> = ({
 
         <div className="h-5 w-px bg-stone-300 hidden xl:block" />
 
-        {/* Font Selector & Size */}
+        {/* Font Selector & Size (Custom popovers prevent focus loss and preserve text selection!) */}
         <div className={`items-center gap-2 text-xs flex-wrap ${
           mobileTab === 'font' ? 'flex' : 'hidden md:flex'
         }`}>
-          <div className="flex items-center gap-1">
+          {/* Custom Non-Focus-Stealing Font Dropdown */}
+          <div className="relative flex items-center gap-1">
             <span className="text-stone-400 font-medium">Font:</span>
-            <select
-              value={activeFontFamily}
-              onChange={(e) => handleFontSelect(e.target.value)}
-              className="max-w-[170px] sm:max-w-[210px] truncate px-2 py-1 bg-white border border-stone-200 rounded text-xs text-stone-900 focus:outline-none focus:ring-1 focus:ring-amber-700 font-serif"
-              title="Modifica font (applica al testo selezionato o all'intero blocco)"
+            <button
+              type="button"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => {
+                setShowFontDropdown((prev) => !prev);
+                setShowSizeDropdown(false);
+                setShowColorPopover(false);
+                setShowListDropdown(false);
+              }}
+              className={`max-w-[180px] sm:max-w-[220px] px-2.5 py-1 bg-white hover:bg-stone-50 border rounded text-xs text-stone-900 flex items-center justify-between gap-1.5 font-serif shadow-2xs transition-colors ${
+                isTextSelected ? 'border-amber-600 ring-1 ring-amber-500/40' : 'border-stone-200'
+              }`}
+              title={
+                isTextSelected
+                  ? 'Modifica font solo sul testo selezionato'
+                  : 'Modifica font del blocco selezionato'
+              }
             >
-              <optgroup label="Cinese · Corsivo (行书/草书/楷书)">
-                {CJK_FONTS.filter((f) => f.language === 'zh' && f.category === 'cursive').map((f) => (
-                  <option key={f.id} value={f.cssFamily}>
-                    {f.nativeName}
-                  </option>
+              <span className="truncate" style={{ fontFamily: displayedFontFamily }}>
+                {displayedFontLabel}
+              </span>
+              <ChevronDown className="w-3.5 h-3.5 text-stone-500 shrink-0" />
+            </button>
+
+            {showFontDropdown && (
+              <div
+                onMouseDown={(e) => e.preventDefault()}
+                className="absolute top-full left-0 mt-1 z-50 w-72 sm:w-80 bg-white border border-stone-200 rounded-xl shadow-2xl p-2 max-h-[70vh] overflow-y-auto text-left"
+              >
+                {[
+                  { title: 'Cinese · Corsivo (行书/草书/楷书)', lang: 'zh', cat: 'cursive' },
+                  { title: 'Cinese · Stampatello (宋体/黑体)', lang: 'zh', cat: 'print' },
+                  { title: 'Coreano · Corsivo & Pennello', lang: 'ko', cat: 'cursive' },
+                  { title: 'Coreano · Stampatello (바탕/고딕)', lang: 'ko', cat: 'print' },
+                ].map((grp) => (
+                  <div key={`${grp.lang}_${grp.cat}`} className="mb-2 last:mb-0">
+                    <div className="text-[11px] font-bold text-amber-950 bg-amber-50 px-2 py-1 rounded mb-1">
+                      {grp.title}
+                    </div>
+                    <div className="space-y-0.5">
+                      {CJK_FONTS.filter(
+                        (f) => f.language === grp.lang && f.category === grp.cat
+                      ).map((f) => {
+                        const isSelected = fontsMatch(f.cssFamily, displayedFontFamily);
+                        return (
+                          <button
+                            key={f.id}
+                            type="button"
+                            onMouseDown={(e) => e.preventDefault()}
+                            onClick={() => {
+                              handleFontSelect(f.cssFamily);
+                              setShowFontDropdown(false);
+                            }}
+                            className={`w-full text-left px-2.5 py-1.5 rounded-lg flex items-center justify-between gap-2 transition-colors ${
+                              isSelected
+                                ? 'bg-amber-100 text-amber-950 font-semibold'
+                                : 'text-stone-800 hover:bg-stone-100'
+                            }`}
+                          >
+                            <span className="text-xs truncate" style={{ fontFamily: f.cssFamily }}>
+                              {f.nativeName}
+                            </span>
+                            {isSelected && <Check className="w-3.5 h-3.5 text-amber-800 shrink-0" />}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
                 ))}
-              </optgroup>
-              <optgroup label="Cinese · Stampatello (宋体/黑体)">
-                {CJK_FONTS.filter((f) => f.language === 'zh' && f.category === 'print').map((f) => (
-                  <option key={f.id} value={f.cssFamily}>
-                    {f.nativeName}
-                  </option>
-                ))}
-              </optgroup>
-              <optgroup label="Coreano · Corsivo & Pennello (붓글씨/손글씨)">
-                {CJK_FONTS.filter((f) => f.language === 'ko' && f.category === 'cursive').map((f) => (
-                  <option key={f.id} value={f.cssFamily}>
-                    {f.nativeName}
-                  </option>
-                ))}
-              </optgroup>
-              <optgroup label="Coreano · Stampatello (바탕/명조/고딕)">
-                {CJK_FONTS.filter((f) => f.language === 'ko' && f.category === 'print').map((f) => (
-                  <option key={f.id} value={f.cssFamily}>
-                    {f.nativeName}
-                  </option>
-                ))}
-              </optgroup>
-            </select>
+              </div>
+            )}
           </div>
 
-          {/* Font Size & Steppers (Prominently Highlighted Active Size + Steppers + Quick Presets) */}
+          {/* Font Size & Steppers (Custom popover preserves text selection!) */}
           <div className="flex items-center gap-1.5 flex-wrap">
             <span className="text-stone-500 font-medium text-xs">
-              {isTableActive ? 'Font Tabella:' : 'Dim:'}
+              {isTableActive ? 'Dim. Tabella:' : 'Dim:'}
             </span>
 
-            {/* Prominently Highlighted Active Font Size Dropdown Menu with Steppers */}
-            <div className="flex items-center gap-1 bg-white border border-stone-200 rounded-lg p-0.5 shadow-2xs">
+            <div
+              className={`relative flex items-center gap-1 bg-white border rounded-lg p-0.5 shadow-2xs ${
+                isTextSelected ? 'border-amber-600 ring-1 ring-amber-500/40' : 'border-stone-200'
+              }`}
+            >
               <button
                 type="button"
                 onMouseDown={(e) => e.preventDefault()}
-                onClick={() => handleFontSizeSelect(Math.max(10, activeFontSize - 2))}
+                onClick={() => handleFontSizeSelect(Math.max(10, displayedFontSize - 2))}
                 className="px-1.5 py-0.5 text-stone-700 hover:text-stone-950 hover:bg-stone-100 font-bold text-xs rounded transition-colors"
-                title="Riduci font (A-)"
+                title="Riduci dimensione font (A-)"
               >
                 A-
               </button>
 
-              {/* Visible, high-contrast, real dropdown select menu */}
-              <select
-                value={activeFontSize}
-                onChange={(e) => handleFontSizeSelect(parseInt(e.target.value, 10))}
-                className="px-2 py-0.5 bg-amber-100 hover:bg-amber-200/80 border border-amber-300 rounded font-mono font-bold text-xs text-amber-950 focus:outline-none focus:ring-1 focus:ring-amber-700 cursor-pointer shadow-2xs transition-colors min-w-[76px] text-center"
-                title="Menu a tendina grandezza font: scegli una dimensione in pt"
+              <button
+                type="button"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => {
+                  setShowSizeDropdown((prev) => !prev);
+                  setShowFontDropdown(false);
+                  setShowColorPopover(false);
+                  setShowListDropdown(false);
+                }}
+                className="px-2 py-0.5 bg-amber-100 hover:bg-amber-200/80 border border-amber-300 rounded font-mono font-bold text-xs text-amber-950 cursor-pointer shadow-2xs transition-colors min-w-[74px] flex items-center justify-center gap-1"
+                title={
+                  isTextSelected
+                    ? 'Dimensione in px applicata alla selezione'
+                    : 'Scegli dimensione font in px'
+                }
               >
-                {!COMMON_FONT_SIZES.includes(activeFontSize) && (
-                  <option value={activeFontSize}>
-                    {activeFontSize} pt (Attuale)
-                  </option>
-                )}
-                {COMMON_FONT_SIZES.map((s) => (
-                  <option key={s} value={s}>
-                    {s} pt {s === activeFontSize ? '✓' : ''}
-                  </option>
-                ))}
-              </select>
+                <span>{displayedFontSize} px</span>
+                <ChevronDown className="w-3 h-3 text-amber-800" />
+              </button>
 
               <button
                 type="button"
                 onMouseDown={(e) => e.preventDefault()}
-                onClick={() => handleFontSizeSelect(Math.min(72, activeFontSize + 2))}
+                onClick={() => handleFontSizeSelect(Math.min(72, displayedFontSize + 2))}
                 className="px-1.5 py-0.5 text-stone-700 hover:text-stone-950 hover:bg-stone-100 font-bold text-xs rounded transition-colors"
-                title="Aumenta font (A+)"
+                title="Aumenta dimensione font (A+)"
               >
                 A+
               </button>
+
+              {showSizeDropdown && (
+                <div
+                  onMouseDown={(e) => e.preventDefault()}
+                  className="absolute top-full left-0 mt-1 z-50 w-52 bg-white border border-stone-200 rounded-xl shadow-2xl p-2 grid grid-cols-3 gap-1 max-h-64 overflow-y-auto"
+                >
+                  {COMMON_FONT_SIZES.map((s) => {
+                    const isSelected = displayedFontSize === s;
+                    return (
+                      <button
+                        key={s}
+                        type="button"
+                        onMouseDown={(e) => e.preventDefault()}
+                        onClick={() => {
+                          handleFontSizeSelect(s);
+                          setShowSizeDropdown(false);
+                        }}
+                        className={`px-2 py-1 text-xs font-mono rounded-md transition-colors ${
+                          isSelected
+                            ? 'bg-amber-800 text-white font-bold'
+                            : 'text-stone-700 hover:bg-amber-50 hover:text-amber-950'
+                        }`}
+                      >
+                        {s} px
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
             </div>
 
-            {/* Quick Size Preset Pills with highlighted active state */}
+            {/* Quick Size Preset Pills */}
             <div className="hidden lg:flex items-center gap-0.5 bg-stone-100 p-0.5 rounded-md border border-stone-200">
               {QUICK_FONT_SIZES.map((sz) => {
-                const isSelected = activeFontSize === sz;
+                const isSelected = displayedFontSize === sz;
                 return (
                   <button
                     key={sz}
@@ -518,7 +682,7 @@ export const FormatToolbar: React.FC<FormatToolbarProps> = ({
                         ? 'bg-amber-800 text-white shadow-2xs ring-1 ring-amber-700'
                         : 'text-stone-600 hover:text-stone-900 hover:bg-white'
                     }`}
-                    title={`Imposta grandezza a ${sz} pt`}
+                    title={`Imposta grandezza a ${sz} px`}
                   >
                     {sz}
                   </button>
@@ -531,19 +695,27 @@ export const FormatToolbar: React.FC<FormatToolbarProps> = ({
           <div className="relative">
             <button
               type="button"
+              onMouseDown={(e) => e.preventDefault()}
               onClick={() => setShowColorPopover(!showColorPopover)}
               className="flex items-center gap-1.5 px-2 py-1 bg-white border border-stone-200 rounded text-xs hover:border-stone-400 transition-colors shadow-2xs"
               title="Colore inchiostro"
             >
               <span
                 className="w-3.5 h-3.5 rounded-full border border-stone-300 inline-block shadow-2xs"
-                style={{ backgroundColor: activeColor }}
+                style={{ backgroundColor: displayedColor }}
               />
-              <span className="text-xs font-mono text-stone-700 hidden sm:inline">{activeColor}</span>
+              <span className="text-xs font-mono text-stone-700 hidden sm:inline">{displayedColor}</span>
             </button>
 
             {showColorPopover && (
-              <div className="absolute top-full left-0 mt-1 z-50 p-3 bg-white border border-stone-200 rounded-xl shadow-2xl w-64">
+              <div
+                onMouseDown={(e) => {
+                  if ((e.target as HTMLElement)?.tagName !== 'INPUT') {
+                    e.preventDefault();
+                  }
+                }}
+                className="absolute top-full left-0 mt-1 z-50 p-3 bg-white border border-stone-200 rounded-xl shadow-2xl w-64"
+              >
                 <div className="text-xs font-bold text-stone-700 mb-2">
                   Tavolozza Tradizionale CJK
                 </div>
@@ -552,6 +724,7 @@ export const FormatToolbar: React.FC<FormatToolbarProps> = ({
                     <button
                       key={col.hex}
                       type="button"
+                      onMouseDown={(e) => e.preventDefault()}
                       onClick={() => {
                         handleColorSelect(col.hex);
                         setShowColorPopover(false);
@@ -573,7 +746,7 @@ export const FormatToolbar: React.FC<FormatToolbarProps> = ({
                   <span className="text-stone-500 font-medium">Personalizzato:</span>
                   <input
                     type="color"
-                    value={activeColor}
+                    value={displayedColor.startsWith('#') ? displayedColor : '#1C1917'}
                     onChange={(e) => handleColorSelect(e.target.value)}
                     className="w-6 h-6 rounded cursor-pointer border border-stone-300"
                   />
@@ -586,6 +759,7 @@ export const FormatToolbar: React.FC<FormatToolbarProps> = ({
           <div className="flex items-center bg-white border border-stone-200 rounded p-0.5 shadow-2xs">
             <button
               type="button"
+              onMouseDown={(e) => e.preventDefault()}
               onClick={() => onTextAlignChange('left')}
               className={`p-1 rounded text-stone-600 hover:text-stone-900 ${
                 textAlign === 'left' ? 'bg-amber-100 text-amber-950 font-bold' : ''
@@ -596,6 +770,7 @@ export const FormatToolbar: React.FC<FormatToolbarProps> = ({
             </button>
             <button
               type="button"
+              onMouseDown={(e) => e.preventDefault()}
               onClick={() => onTextAlignChange('center')}
               className={`p-1 rounded text-stone-600 hover:text-stone-900 ${
                 textAlign === 'center' ? 'bg-amber-100 text-amber-950 font-bold' : ''
@@ -606,6 +781,7 @@ export const FormatToolbar: React.FC<FormatToolbarProps> = ({
             </button>
             <button
               type="button"
+              onMouseDown={(e) => e.preventDefault()}
               onClick={() => onTextAlignChange('right')}
               className={`p-1 rounded text-stone-600 hover:text-stone-900 ${
                 textAlign === 'right' ? 'bg-amber-100 text-amber-950 font-bold' : ''
@@ -616,6 +792,7 @@ export const FormatToolbar: React.FC<FormatToolbarProps> = ({
             </button>
             <button
               type="button"
+              onMouseDown={(e) => e.preventDefault()}
               onClick={() => onTextAlignChange('justify')}
               className={`p-1 rounded text-stone-600 hover:text-stone-900 ${
                 textAlign === 'justify' ? 'bg-amber-100 text-amber-950 font-bold' : ''
@@ -631,6 +808,7 @@ export const FormatToolbar: React.FC<FormatToolbarProps> = ({
             <div className="flex items-center gap-1">
               <button
                 type="button"
+                onMouseDown={(e) => e.preventDefault()}
                 onClick={() => {
                   onAlignTextToGrid?.();
                   setAlignedFeedback(true);
@@ -654,6 +832,7 @@ export const FormatToolbar: React.FC<FormatToolbarProps> = ({
             <span className="text-[11px] text-stone-500 font-medium whitespace-nowrap">Interlinea:</span>
             <button
               type="button"
+              onMouseDown={(e) => e.preventDefault()}
               onClick={() => onLineHeightChange(Math.max(1.0, Math.round((lineHeight - 0.1) * 10) / 10))}
               className="px-1.5 py-0.5 text-stone-600 hover:text-stone-950 hover:bg-stone-100 font-bold rounded text-xs transition-colors"
               title="Riduci interlinea (-0.1)"
@@ -665,6 +844,7 @@ export const FormatToolbar: React.FC<FormatToolbarProps> = ({
             </span>
             <button
               type="button"
+              onMouseDown={(e) => e.preventDefault()}
               onClick={() => onLineHeightChange(Math.min(4.0, Math.round((lineHeight + 0.1) * 10) / 10))}
               className="px-1.5 py-0.5 text-stone-600 hover:text-stone-950 hover:bg-stone-100 font-bold rounded text-xs transition-colors"
               title="Aumenta interlinea (+0.1)"
@@ -676,6 +856,7 @@ export const FormatToolbar: React.FC<FormatToolbarProps> = ({
                 <button
                   key={lh}
                   type="button"
+                  onMouseDown={(e) => e.preventDefault()}
                   onClick={() => onLineHeightChange(lh)}
                   className={`px-1 py-0.5 text-[10px] rounded font-semibold transition-colors ${
                     Math.abs(lineHeight - lh) < 0.05
@@ -695,6 +876,7 @@ export const FormatToolbar: React.FC<FormatToolbarProps> = ({
             <span className="text-[11px] text-stone-500 font-medium whitespace-nowrap">Spaziatura:</span>
             <button
               type="button"
+              onMouseDown={(e) => e.preventDefault()}
               onClick={() => onLetterSpacingChange(Math.max(0, Math.round((letterSpacing - 0.02) * 100) / 100))}
               className="px-1.5 py-0.5 text-stone-600 hover:text-stone-950 hover:bg-stone-100 font-bold rounded text-xs transition-colors"
               title="Riduci spaziatura caratteri (-0.02em)"
@@ -706,6 +888,7 @@ export const FormatToolbar: React.FC<FormatToolbarProps> = ({
             </span>
             <button
               type="button"
+              onMouseDown={(e) => e.preventDefault()}
               onClick={() => onLetterSpacingChange(Math.min(0.6, Math.round((letterSpacing + 0.02) * 100) / 100))}
               className="px-1.5 py-0.5 text-stone-600 hover:text-stone-950 hover:bg-stone-100 font-bold rounded text-xs transition-colors"
               title="Aumenta spaziatura caratteri (+0.02em)"
@@ -721,6 +904,7 @@ export const FormatToolbar: React.FC<FormatToolbarProps> = ({
                 <button
                   key={sp.label}
                   type="button"
+                  onMouseDown={(e) => e.preventDefault()}
                   onClick={() => onLetterSpacingChange(sp.val)}
                   className={`px-1 py-0.5 text-[10px] rounded font-semibold transition-colors ${
                     Math.abs(letterSpacing - sp.val) < 0.02
@@ -735,9 +919,33 @@ export const FormatToolbar: React.FC<FormatToolbarProps> = ({
             </div>
           </div>
 
+          {/* Active List Style Quick Selector when a List block is selected */}
+          {isListActive && onListStyleChange && (
+            <div className="flex items-center gap-1 bg-amber-50/80 border border-amber-200 rounded px-1.5 py-0.5">
+              <span className="text-[11px] font-bold text-amber-950">Lista:</span>
+              <select
+                value={activeListStyle || 'arabic-dot'}
+                onChange={(e) => onListStyleChange(e.target.value as ListNumberingType)}
+                className="bg-white border border-amber-200 rounded px-1.5 py-0.5 text-xs text-stone-800 font-medium focus:outline-none focus:ring-1 focus:ring-amber-700 max-w-[165px] truncate"
+                title="Cambia stile numerazione dell'elenco selezionato"
+              >
+                {LIST_STYLE_CATEGORIES.map((cat) => (
+                  <optgroup key={cat.id} label={cat.name}>
+                    {LIST_STYLE_OPTIONS.filter((o) => o.category === cat.id).map((opt) => (
+                      <option key={opt.value} value={opt.value}>
+                        {opt.label} ({opt.sample})
+                      </option>
+                    ))}
+                  </optgroup>
+                ))}
+              </select>
+            </div>
+          )}
+
           {/* Emphasis Dots */}
           <button
             type="button"
+            onMouseDown={(e) => e.preventDefault()}
             onClick={onToggleEmphasisDots}
             className={`px-2 py-1 text-xs rounded border transition-colors flex items-center gap-1 ${
               hasEmphasisDots
@@ -755,6 +963,18 @@ export const FormatToolbar: React.FC<FormatToolbarProps> = ({
         <div className={`items-center gap-1.5 flex-wrap ${
           mobileTab === 'insert' ? 'flex' : 'hidden md:flex'
         }`}>
+          {onInsertParagraph && (
+            <button
+              type="button"
+              onClick={onInsertParagraph}
+              className="px-2.5 py-1 text-xs bg-amber-800 hover:bg-amber-900 text-white rounded flex items-center gap-1 transition-colors shadow-2xs font-semibold"
+              title="Aggiungi nuovo blocco di testo dopo il blocco selezionato"
+            >
+              <Type className="w-3.5 h-3.5" />
+              <span>+ Testo</span>
+            </button>
+          )}
+
           <button
             type="button"
             onMouseDown={(e) => e.preventDefault()}

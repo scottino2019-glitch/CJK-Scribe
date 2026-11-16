@@ -464,6 +464,15 @@ export function alignDocumentToPaperGrid(doc: CJKDocument): CJKDocument {
     pages: doc.pages.map((p) => ({
       ...p,
       blocks: p.blocks.map((b) => {
+        if (
+          b.type === 'table' ||
+          b.type === 'list' ||
+          b.type === 'seal-group' ||
+          b.type === 'divider'
+        ) {
+          return b;
+        }
+
         const bFont = b.fontFamily || doc.defaultFontFamily;
         const bFontSize = b.fontSize || doc.defaultFontSize || metrics.fontSize;
 

@@ -48,6 +48,379 @@ export interface ExportResult {
   filename: string;
 }
 
+interface PositionedGlyphRun {
+  text: string;
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+  fontFamily: string;
+  fontSize: string;
+  fontWeight: string;
+  fontStyle: string;
+  color: string;
+  textDecoration: string;
+  rotateDeg: number;
+  isEmphasisEligible: boolean;
+}
+
+interface VerticalContainerSnapshot {
+  width: number;
+  height: number;
+  hasEmphasisDots: boolean;
+  runs: PositionedGlyphRun[];
+}
+
+const ROTATED_VERTICAL_PUNCTUATION = new Set([
+  '「', '」', '『', '』', '（', '）', '〔', '〕', '【', '】',
+  '《', '》', '〈', '〉', '—', '–', '―', '…', '‥', '～', '~',
+  '(', ')', '[', ']', '{', '}', '─', '━',
+]);
+
+const SKIP_EMPHASIS_PUNCTUATION = new Set([
+  '，', '。', '、', '；', '：', '？', '！', '·', '…', '—',
+  '「', '」', '『', '』', '（', '）', '〔', '〕', '【', '】',
+  '《', '》', '〈', '〉', '.', ',', ';', ':', '?', '!',
+]);
+
+function isCjkOrFullwidthChar(ch: string): boolean {
+  const cp = ch.codePointAt(0);
+  if (!cp) return false;
+  return (
+    (cp >= 0x4e00 && cp <= 0x9fff) || // CJK Unified Ideographs
+    (cp >= 0x3400 && cp <= 0x4dbf) || // CJK Extension A
+    (cp >= 0xf900 && cp <= 0xfaff) || // CJK Compatibility Ideographs
+    (cp >= 0x3000 && cp <= 0x303f) || // CJK Symbols and Punctuation
+    (cp >= 0x3040 && cp <= 0x30ff) || // Hiragana & Katakana
+    (cp >= 0xac00 && cp <= 0xd7af) || // Hangul Syllables
+    (cp >= 0x1100 && cp <= 0x11ff) || // Hangul Jamo
+    (cp >= 0x3130 && cp <= 0x318f) || // Hangul Compatibility Jamo
+    (cp >= 0xff00 && cp <= 0xffef) || // Halfwidth and Fullwidth Forms
+    (cp >= 0x20000 && cp <= 0x2fa1f) // CJK Extensions B-F
+  );
+}
+
+function getGraphemes(text: string): Array<{ segment: string; index: number }> {
+  if (typeof Intl !== 'undefined' && 'Segmenter' in Intl) {
+    const SegmenterCtor = (Intl as unknown as { Segmenter: new (loc?: string, opts?: { granularity: string }) => { segment: (s: string) => Iterable<{ segment: string; index: number }> } }).Segmenter;
+    const segmenter = new SegmenterCtor(undefined, { granularity: 'grapheme' });
+    return Array.from(segmenter.segment(text));
+  }
+  const result: Array<{ segment: string; index: number }> = [];
+  let idx = 0;
+  for (const ch of text) {
+    result.push({ segment: ch, index: idx });
+    idx += ch.length;
+  }
+  return result;
+}
+
+function getNormalizedColor(cs: CSSStyleDeclaration): string {
+  const c = cs.color;
+  if (!c || c === 'rgba(0, 0, 0, 0)' || c === 'transparent') {
+    return '#1c1917';
+  }
+  return c;
+}
+
+/**
+ * Snapshots exact browser-measured positions for every glyph and ruby annotation
+ * inside a vertical-writing container BEFORE html2canvas-pro clones it.
+ * This completely bypasses html2canvas-pro's broken iterateVerticalGlyphs / ruby renderers.
+ */
+function captureVerticalContainerSnapshot(
+  container: HTMLElement
+): VerticalContainerSnapshot | null {
+  const containerRect = container.getBoundingClientRect();
+  if (containerRect.width <= 0 || containerRect.height <= 0) {
+    return null;
+  }
+
+  const hasEmphasisDots = container.classList.contains('cjk-emphasis-dot');
+  const runs: PositionedGlyphRun[] = [];
+  const doc = container.ownerDocument;
+
+  const measureTextNode = (
+    textNode: Text,
+    styleEl: HTMLElement,
+    insideRt: boolean
+  ) => {
+    const text = textNode.textContent || '';
+    if (!text.trim()) return;
+
+    const cs = window.getComputedStyle(styleEl);
+    const fontFamily = cs.fontFamily || 'serif';
+    const fontSize = cs.fontSize || '18px';
+    const fontWeight = cs.fontWeight || 'normal';
+    const fontStyle = cs.fontStyle || 'normal';
+    const color = getNormalizedColor(cs);
+    const textDecoration = cs.textDecorationLine && cs.textDecorationLine !== 'none' ? cs.textDecorationLine : '';
+    const textOrientation = cs.textOrientation || 'upright';
+    const isTateChuYoko =
+      cs.textCombineUpright === 'all' || styleEl.classList.contains('tatechuyoko');
+
+    // Tate-chu-yoko: render whole short horizontal span intact
+    if (isTateChuYoko) {
+      const range = doc.createRange();
+      range.selectNodeContents(textNode);
+      const rect = range.getBoundingClientRect();
+      if (rect.width > 0 && rect.height > 0) {
+        runs.push({
+          text: text.trim(),
+          left: rect.left - containerRect.left,
+          top: rect.top - containerRect.top,
+          width: rect.width,
+          height: rect.height,
+          fontFamily,
+          fontSize,
+          fontWeight,
+          fontStyle,
+          color,
+          textDecoration,
+          rotateDeg: 0,
+          isEmphasisEligible: false,
+        });
+      }
+      return;
+    }
+
+    // Inside <rt> or mixed orientation with non-CJK run (e.g. Pinyin "chūn"):
+    // Browser renders non-CJK words sideways (+90deg) as a single continuous run.
+    if ((insideRt || textOrientation === 'mixed') && !isCjkOrFullwidthChar(text.trim()[0] || '')) {
+      const trimmed = text.trim();
+      if (trimmed.length > 0 && !/[\u4e00-\u9fff\uac00-\ud7af\u3040-\u30ff]/.test(trimmed)) {
+        const range = doc.createRange();
+        const startOffset = text.indexOf(trimmed);
+        range.setStart(textNode, Math.max(0, startOffset));
+        range.setEnd(textNode, Math.min(text.length, startOffset + trimmed.length));
+        const rect = range.getBoundingClientRect();
+        if (rect.width > 0 && rect.height > 0) {
+          runs.push({
+            text: trimmed,
+            left: rect.left - containerRect.left,
+            top: rect.top - containerRect.top,
+            width: rect.width,
+            height: rect.height,
+            fontFamily,
+            fontSize,
+            fontWeight,
+            fontStyle,
+            color,
+            textDecoration,
+            rotateDeg: 90,
+            isEmphasisEligible: false,
+          });
+          return;
+        }
+      }
+    }
+
+    const graphemes = getGraphemes(text);
+    const range = doc.createRange();
+
+    for (const g of graphemes) {
+      const seg = g.segment;
+      if (!seg || /^\s+$/.test(seg)) continue;
+
+      try {
+        range.setStart(textNode, g.index);
+        range.setEnd(textNode, g.index + seg.length);
+      } catch {
+        continue;
+      }
+
+      const clientRects = range.getClientRects();
+      const rect = clientRects.length > 0 ? clientRects[0] : range.getBoundingClientRect();
+      if (!rect || rect.width <= 0 || rect.height <= 0) continue;
+
+      const isPunctRotated = ROTATED_VERTICAL_PUNCTUATION.has(seg);
+      const isMixedNonCjk =
+        (insideRt || textOrientation === 'mixed') && !isCjkOrFullwidthChar(seg);
+      const rotateDeg = isPunctRotated || isMixedNonCjk ? 90 : 0;
+
+      runs.push({
+        text: seg,
+        left: rect.left - containerRect.left,
+        top: rect.top - containerRect.top,
+        width: rect.width,
+        height: rect.height,
+        fontFamily,
+        fontSize,
+        fontWeight,
+        fontStyle,
+        color,
+        textDecoration,
+        rotateDeg,
+        isEmphasisEligible: !insideRt && !SKIP_EMPHASIS_PUNCTUATION.has(seg),
+      });
+    }
+  };
+
+  const walk = (node: Node, insideRt: boolean) => {
+    if (node.nodeType === Node.TEXT_NODE) {
+      const parentEl = node.parentElement || container;
+      measureTextNode(node as Text, parentEl, insideRt);
+      return;
+    }
+
+    if (node.nodeType !== Node.ELEMENT_NODE) return;
+    const el = node as HTMLElement;
+
+    if (
+      el.classList.contains('no-print') ||
+      el.getAttribute('data-no-export') === 'true'
+    ) {
+      return;
+    }
+
+    const cs = window.getComputedStyle(el);
+    if (cs.display === 'none' || cs.visibility === 'hidden') return;
+
+    // Skip <rp> fallback parentheses inside <ruby>
+    if (el.tagName === 'RP') return;
+
+    const childInsideRt = insideRt || el.tagName === 'RT';
+    for (let i = 0; i < el.childNodes.length; i++) {
+      walk(el.childNodes[i], childInsideRt);
+    }
+  };
+
+  walk(container, false);
+
+  return {
+    width: containerRect.width,
+    height: containerRect.height,
+    hasEmphasisDots,
+    runs,
+  };
+}
+
+/**
+ * Replaces a cloned vertical-writing element's DOM with horizontal-tb absolutely positioned
+ * glyph boxes using exact coordinates measured from the live DOM.
+ */
+function applyVerticalSnapshotToClone(
+  clonedDoc: Document,
+  cloneEl: HTMLElement,
+  snapshot: VerticalContainerSnapshot
+) {
+  cloneEl.innerHTML = '';
+  cloneEl.style.position = 'relative';
+  cloneEl.style.width = `${snapshot.width}px`;
+  cloneEl.style.minWidth = `${snapshot.width}px`;
+  cloneEl.style.height = `${snapshot.height}px`;
+  cloneEl.style.minHeight = `${snapshot.height}px`;
+  cloneEl.style.writingMode = 'horizontal-tb';
+  cloneEl.style.textOrientation = 'mixed';
+  cloneEl.style.letterSpacing = '0px';
+  cloneEl.style.lineHeight = '1';
+  cloneEl.style.padding = '0px';
+  cloneEl.style.boxSizing = 'border-box';
+  cloneEl.classList.remove('cjk-emphasis-dot', 'vertical-writing-upright', 'vertical-writing-mixed');
+
+  for (const run of snapshot.runs) {
+    const glyphSpan = clonedDoc.createElement('span');
+    glyphSpan.textContent = run.text;
+    glyphSpan.style.position = 'absolute';
+    glyphSpan.style.writingMode = 'horizontal-tb';
+    glyphSpan.style.fontFamily = run.fontFamily;
+    glyphSpan.style.fontSize = run.fontSize;
+    glyphSpan.style.fontWeight = run.fontWeight;
+    glyphSpan.style.fontStyle = run.fontStyle;
+    glyphSpan.style.color = run.color;
+    glyphSpan.style.lineHeight = '1';
+    glyphSpan.style.whiteSpace = 'nowrap';
+    glyphSpan.style.margin = '0px';
+    glyphSpan.style.padding = '0px';
+    if (run.textDecoration) {
+      glyphSpan.style.textDecoration = run.textDecoration;
+    }
+
+    if (run.rotateDeg !== 0) {
+      const cx = run.left + run.width / 2;
+      const cy = run.top + run.height / 2;
+      glyphSpan.style.left = `${cx}px`;
+      glyphSpan.style.top = `${cy}px`;
+      glyphSpan.style.transform = `translate(-50%, -50%) rotate(${run.rotateDeg}deg)`;
+      glyphSpan.style.transformOrigin = 'center center';
+      glyphSpan.style.textAlign = 'center';
+    } else {
+      glyphSpan.style.left = `${run.left}px`;
+      glyphSpan.style.top = `${run.top}px`;
+      glyphSpan.style.width = `${run.width}px`;
+      glyphSpan.style.height = `${run.height}px`;
+      glyphSpan.style.display = 'flex';
+      glyphSpan.style.alignItems = 'center';
+      glyphSpan.style.justifyContent = 'center';
+    }
+
+    cloneEl.appendChild(glyphSpan);
+
+    if (snapshot.hasEmphasisDots && run.isEmphasisEligible) {
+      const dotSpan = clonedDoc.createElement('span');
+      dotSpan.textContent = '•';
+      dotSpan.style.position = 'absolute';
+      dotSpan.style.writingMode = 'horizontal-tb';
+      dotSpan.style.left = `${run.left + run.width + 1}px`;
+      dotSpan.style.top = `${run.top + run.height / 2}px`;
+      dotSpan.style.transform = 'translateY(-50%)';
+      dotSpan.style.fontSize = `${Math.max(8, Math.round(parseFloat(run.fontSize) * 0.45))}px`;
+      dotSpan.style.color = run.color;
+      dotSpan.style.lineHeight = '1';
+      cloneEl.appendChild(dotSpan);
+    }
+  }
+}
+
+/**
+ * Converts horizontal-mode <ruby> elements into inline-flex stacked boxes
+ * so html2canvas-pro renders Pinyin cleanly centered above CJK characters.
+ */
+function normalizeHorizontalRubyInClone(clonedDoc: Document, root: HTMLElement) {
+  const rubies = Array.from(root.querySelectorAll('ruby'));
+  for (const ruby of rubies) {
+    const r = ruby as HTMLElement;
+    const rt = r.querySelector('rt') as HTMLElement | null;
+    const rb = r.querySelector('rb') as HTMLElement | null;
+    const rps = r.querySelectorAll('rp');
+    rps.forEach((rp) => rp.remove());
+
+    if (!rt) continue;
+
+    // Collect base text/nodes if <rb> wrapper is absent
+    if (!rb) {
+      const baseSpan = clonedDoc.createElement('span');
+      const toMove: ChildNode[] = [];
+      for (let i = 0; i < r.childNodes.length; i++) {
+        const child = r.childNodes[i];
+        if (child !== rt) {
+          toMove.push(child);
+        }
+      }
+      toMove.forEach((n) => baseSpan.appendChild(n));
+      r.insertBefore(baseSpan, rt);
+    } else {
+      rb.style.display = 'block';
+      rb.style.lineHeight = '1.15';
+      rb.style.textAlign = 'center';
+    }
+
+    r.style.display = 'inline-flex';
+    r.style.flexDirection = 'column-reverse';
+    r.style.alignItems = 'center';
+    r.style.verticalAlign = 'bottom';
+    r.style.lineHeight = '1';
+    r.style.margin = '0 0.12em';
+
+    rt.style.display = 'block';
+    rt.style.writingMode = 'horizontal-tb';
+    rt.style.textAlign = 'center';
+    rt.style.lineHeight = '1.05';
+    rt.style.marginLeft = '0px';
+    rt.style.marginBottom = '2px';
+  }
+}
+
 export async function exportDocumentToPdf(
   elementIds: string[],
   options: ExportPdfOptions = {}
@@ -75,7 +448,7 @@ export async function exportDocumentToPdf(
     const pageWidth = pdf.internal.pageSize.getWidth();
     const pageHeight = pdf.internal.pageSize.getHeight();
 
-    // Ensure all web fonts are fully loaded before capturing
+    // Ensure all web fonts are fully loaded before measuring & capturing
     if (document.fonts) {
       onProgress?.(15, 'Caricamento font calligrafici...');
       await document.fonts.ready;
@@ -96,7 +469,7 @@ export async function exportDocumentToPdf(
         `Elaborazione pagina ${i + 1} di ${elementIds.length}...`
       );
 
-      // Preload all images in the page to ensure complete rendering without cropping or blanks
+      // Preload all images in the page
       const pageImages = Array.from(el.querySelectorAll('img'));
       if (pageImages.length > 0) {
         await Promise.all(
@@ -116,125 +489,168 @@ export async function exportDocumentToPdf(
       }
 
       const marginPx = Math.round(marginMm * 3.7795);
+      const liveHeight = Math.max(spec.heightPx, Math.ceil(el.scrollHeight));
 
-      // Render page using html2canvas-pro with exact dimensions to avoid any character stretching
-      const canvas = await html2canvas(el, {
-        width: spec.widthPx,
-        height: spec.heightPx,
-        windowWidth: spec.widthPx,
-        windowHeight: spec.heightPx,
-        scale: 2.5, // Crisp high-DPI resolution for Chinese & Korean strokes
-        useCORS: true,
-        allowTaint: true,
-        logging: false,
-        backgroundColor: paperBgColor,
-        ignoreElements: (element) => {
-          return (
-            element.classList?.contains('no-print') ||
-            element.getAttribute('data-no-export') === 'true'
-          );
-        },
-        onclone: (clonedDoc) => {
-          // 1. Copy all loaded fonts & stylesheets directly into cloned document head
-          const styles = document.querySelectorAll('link[rel="stylesheet"], style');
-          styles.forEach((s) => {
-            clonedDoc.head.appendChild(s.cloneNode(true));
-          });
+      // Tag & snapshot all vertical-writing blocks + vertical seal texts BEFORE cloning
+      const blockSnapshots = new Map<string, VerticalContainerSnapshot>();
+      const taggedSealIds: Array<{ node: HTMLElement; id: string }> = [];
 
-          // Inject all loaded CSS rules to ensure @font-face rules are available in clone
-          try {
-            const aggregatedRules: string[] = [];
-            for (let sIdx = 0; sIdx < document.styleSheets.length; sIdx++) {
-              try {
-                const sheet = document.styleSheets[sIdx];
-                if (sheet && sheet.cssRules) {
-                  for (let rIdx = 0; rIdx < sheet.cssRules.length; rIdx++) {
-                    aggregatedRules.push(sheet.cssRules[rIdx].cssText);
-                  }
-                }
-              } catch (_) {
-                // Cross-origin stylesheet access restriction ignored
-              }
-            }
-            if (aggregatedRules.length > 0) {
-              const inlineStyle = clonedDoc.createElement('style');
-              inlineStyle.textContent = aggregatedRules.join('\n');
-              clonedDoc.head.appendChild(inlineStyle);
-            }
-          } catch (_) {}
+      const liveBlocks = Array.from(el.querySelectorAll('[data-block-id]')) as HTMLElement[];
+      for (const liveBlock of liveBlocks) {
+        const blockId = liveBlock.getAttribute('data-block-id');
+        if (!blockId) continue;
+        const cs = window.getComputedStyle(liveBlock);
+        if (cs.writingMode && cs.writingMode.startsWith('vertical')) {
+          const snap = captureVerticalContainerSnapshot(liveBlock);
+          if (snap) {
+            blockSnapshots.set(blockId, snap);
+          }
+        }
+      }
 
-          const clonedPage = clonedDoc.getElementById(elId);
-          if (clonedPage) {
-            clonedPage.style.boxShadow = 'none';
-            clonedPage.style.border = 'none';
-            clonedPage.style.borderRadius = '0px';
-            clonedPage.style.width = `${spec.widthPx}px`;
-            clonedPage.style.height = `${spec.heightPx}px`;
-            clonedPage.style.minHeight = `${spec.heightPx}px`;
-            clonedPage.style.maxHeight = `${spec.heightPx}px`;
-            clonedPage.style.maxWidth = `${spec.widthPx}px`;
-            clonedPage.style.boxSizing = 'border-box';
-            clonedPage.style.overflow = 'hidden';
-            clonedPage.style.margin = '0px';
-            clonedPage.style.backgroundColor = paperBgColor;
-            clonedPage.style.transform = 'none';
-            clonedPage.style.padding = `${marginPx}px`;
+      // Also snapshot vertical seal text divs (4-char seals use writingMode: vertical-rl)
+      let sealIdx = 0;
+      const sealDivs = Array.from(el.querySelectorAll('div')) as HTMLElement[];
+      for (const div of sealDivs) {
+        if (div.closest('[data-block-id]')) continue;
+        if (div.style.writingMode === 'vertical-rl') {
+          const snap = captureVerticalContainerSnapshot(div);
+          if (snap) {
+            const tempId = `seal_snap_${i}_${sealIdx++}`;
+            div.setAttribute('data-vertical-seal-id', tempId);
+            taggedSealIds.push({ node: div, id: tempId });
+            blockSnapshots.set(`__seal__${tempId}`, snap);
+          }
+        }
+      }
 
-            // 2. CRITICAL: Remove all contenteditable attributes so html2canvas renders pure text nodes
-            const allEditables = clonedDoc.querySelectorAll('[contenteditable]');
+      let canvas: HTMLCanvasElement;
+      try {
+        canvas = await html2canvas(el, {
+          width: spec.widthPx,
+          height: liveHeight,
+          windowWidth: spec.widthPx,
+          windowHeight: liveHeight,
+          x: 0,
+          y: 0,
+          scrollX: 0,
+          scrollY: 0,
+          scale: 2.5,
+          useCORS: true,
+          allowTaint: true,
+          logging: false,
+          backgroundColor: paperBgColor,
+          ignoreElements: (element) => {
+            return (
+              element.classList?.contains('no-print') ||
+              element.getAttribute('data-no-export') === 'true'
+            );
+          },
+          onclone: (clonedDoc, clonedPageArg) => {
+            const clonedPage =
+              (clonedPageArg as HTMLElement | undefined) ||
+              clonedDoc.getElementById(elId);
+            if (!clonedPage) return;
+
+            // Remove editor-only UI elements from cloned DOM
+            const noPrints = clonedPage.querySelectorAll('.no-print, [data-no-export="true"]');
+            noPrints.forEach((np) => np.remove());
+
+            // Strip contenteditable so browser/canvas doesn't draw caret/editing artifacts
+            const allEditables = clonedPage.querySelectorAll('[contenteditable]');
             allEditables.forEach((ed) => {
               (ed as HTMLElement).removeAttribute('contenteditable');
             });
 
-            // 3. Explicitly transfer content & computed typography from live document blocks to cloned blocks
-            try {
-              const liveBlocks = el.querySelectorAll('[data-block-id]');
-              liveBlocks.forEach((liveBlock) => {
-                const blockId = liveBlock.getAttribute('data-block-id');
-                if (!blockId) return;
+            // Remove active outlines & selection highlights
+            const activeRings = clonedPage.querySelectorAll(
+              '.ring-1, .ring-2, .bg-amber-500\\/5, .bg-amber-500\\/10'
+            );
+            activeRings.forEach((ring) => {
+              ring.classList.remove(
+                'ring-1',
+                'ring-2',
+                'ring-amber-700/60',
+                'ring-amber-500/60',
+                'border-amber-600/60',
+                'ring-amber-500/20',
+                'bg-amber-500/5',
+                'bg-amber-500/10'
+              );
+            });
 
-                const cloneBlock = clonedPage.querySelector(`[data-block-id="${blockId}"]`) as HTMLElement | null;
-                if (cloneBlock) {
-                  // Ensure text and HTML is exactly preserved
-                  cloneBlock.innerHTML = (liveBlock as HTMLElement).innerHTML;
+            // Sync live contents & typography for horizontal blocks / cells,
+            // and apply pre-measured glyph snapshots for vertical blocks.
+            const cloneBlocks = Array.from(
+              clonedPage.querySelectorAll('[data-block-id]')
+            ) as HTMLElement[];
 
-                  // Apply computed typography directly as inline styles
+            for (const cloneBlock of cloneBlocks) {
+              const blockId = cloneBlock.getAttribute('data-block-id');
+              if (!blockId) continue;
+
+              const vertSnap = blockSnapshots.get(blockId);
+              if (vertSnap) {
+                applyVerticalSnapshotToClone(clonedDoc, cloneBlock, vertSnap);
+              } else {
+                const liveBlock = el.querySelector(`[data-block-id="${blockId}"]`) as HTMLElement | null;
+                if (liveBlock) {
+                  cloneBlock.innerHTML = liveBlock.innerHTML;
                   const cs = window.getComputedStyle(liveBlock);
                   if (cs.fontFamily) cloneBlock.style.fontFamily = cs.fontFamily;
                   if (cs.fontSize) cloneBlock.style.fontSize = cs.fontSize;
                   if (cs.fontWeight) cloneBlock.style.fontWeight = cs.fontWeight;
                   if (cs.fontStyle) cloneBlock.style.fontStyle = cs.fontStyle;
-                  cloneBlock.style.color = (cs.color && cs.color !== 'rgba(0, 0, 0, 0)') ? cs.color : '#1c1917';
+                  cloneBlock.style.color = getNormalizedColor(cs);
                   if (cs.lineHeight) cloneBlock.style.lineHeight = cs.lineHeight;
                   if (cs.letterSpacing) cloneBlock.style.letterSpacing = cs.letterSpacing;
                   if (cs.textAlign) cloneBlock.style.textAlign = cs.textAlign;
-                  if (cs.writingMode) cloneBlock.style.writingMode = cs.writingMode;
-                  if (cs.textOrientation) cloneBlock.style.textOrientation = cs.textOrientation;
                   cloneBlock.style.visibility = 'visible';
                   cloneBlock.style.opacity = '1';
                 }
-              });
-
-              // Transfer table cell contents and styles
-              const liveCells = el.querySelectorAll('td, th');
-              const cloneCells = clonedPage.querySelectorAll('td, th');
-              for (let i = 0; i < liveCells.length && i < cloneCells.length; i++) {
-                const lc = liveCells[i] as HTMLElement;
-                const cc = cloneCells[i] as HTMLElement;
-                if (lc && cc) {
-                  cc.innerHTML = lc.innerHTML;
-                  const cs = window.getComputedStyle(lc);
-                  if (cs.fontFamily) cc.style.fontFamily = cs.fontFamily;
-                  if (cs.fontSize) cc.style.fontSize = cs.fontSize;
-                  cc.style.color = (cs.color && cs.color !== 'rgba(0, 0, 0, 0)') ? cs.color : '#1c1917';
-                  if (cs.textAlign) cc.style.textAlign = cs.textAlign;
-                }
               }
-            } catch (syncErr) {
-              console.warn('Block typography synchronization fallback:', syncErr);
             }
 
-            // 4. Force grid pattern overlay dimensions to match content container
+            // Apply vertical snapshots to 4-char seals
+            const cloneSeals = Array.from(
+              clonedPage.querySelectorAll('[data-vertical-seal-id]')
+            ) as HTMLElement[];
+            for (const cloneSeal of cloneSeals) {
+              const tempId = cloneSeal.getAttribute('data-vertical-seal-id');
+              if (!tempId) continue;
+              const snap = blockSnapshots.get(`__seal__${tempId}`);
+              if (snap) {
+                applyVerticalSnapshotToClone(clonedDoc, cloneSeal, snap);
+              }
+            }
+
+            // Sync table cell & list item contents/styles
+            const liveCells = el.querySelectorAll('[data-cell-id], td, th');
+            const cloneCells = clonedPage.querySelectorAll('[data-cell-id], td, th');
+            for (let idx = 0; idx < liveCells.length && idx < cloneCells.length; idx++) {
+              const lc = liveCells[idx] as HTMLElement;
+              const cc = cloneCells[idx] as HTMLElement;
+              if (lc && cc) {
+                cc.innerHTML = lc.innerHTML;
+                const cs = window.getComputedStyle(lc);
+                if (cs.fontFamily) cc.style.fontFamily = cs.fontFamily;
+                if (cs.fontSize) cc.style.fontSize = cs.fontSize;
+                cc.style.color = getNormalizedColor(cs);
+                if (cs.textAlign) cc.style.textAlign = cs.textAlign;
+              }
+            }
+
+            // Convert remaining horizontal <ruby> tags into flex columns so html2canvas renders Pinyin above base chars
+            normalizeHorizontalRubyInClone(clonedDoc, clonedPage);
+
+            // Prevent any images from overflowing
+            const allImages = clonedPage.querySelectorAll('img');
+            allImages.forEach((img) => {
+              img.style.maxWidth = '100%';
+              img.style.objectFit = 'contain';
+            });
+
+            // Force grid and traditional border overlays to fill their container cleanly
             const gridPattern = clonedPage.querySelector('.grid-pattern-overlay') as HTMLElement | null;
             if (gridPattern) {
               gridPattern.style.top = '0px';
@@ -248,7 +664,6 @@ export async function exportDocumentToPdf(
               gridPattern.style.pointerEvents = 'none';
             }
 
-            // Explicitly force traditional border overlay dimensions
             const borderOverlay = clonedPage.querySelector('.traditional-border-overlay') as HTMLElement | null;
             if (borderOverlay) {
               borderOverlay.style.top = '0px';
@@ -260,27 +675,49 @@ export async function exportDocumentToPdf(
               borderOverlay.style.position = 'absolute';
               borderOverlay.style.display = 'block';
             }
-          }
 
-          // Prevent any images from overflowing
-          const allImages = clonedDoc.querySelectorAll('img');
-          allImages.forEach((img) => {
-            img.style.maxWidth = '100%';
-            img.style.objectFit = 'contain';
-          });
+            // Isolate clonedPage at (0, 0) in clonedDoc.body so parent scroll/flex wrappers never offset it
+            clonedDoc.documentElement.style.margin = '0';
+            clonedDoc.documentElement.style.padding = '0';
+            clonedDoc.documentElement.style.overflow = 'visible';
+            clonedDoc.documentElement.style.width = `${spec.widthPx}px`;
+            clonedDoc.documentElement.style.height = `${liveHeight}px`;
 
-          // Remove active outlines and selection highlights from cloned DOM
-          const activeRings = clonedDoc.querySelectorAll('.ring-1, .ring-2, .bg-amber-500\\/5, .bg-amber-500\\/10');
-          activeRings.forEach((ring) => {
-            ring.classList.remove('ring-1', 'ring-2', 'ring-amber-700/60', 'ring-amber-500/60', 'bg-amber-500/5', 'bg-amber-500/10');
-          });
+            clonedDoc.body.style.margin = '0';
+            clonedDoc.body.style.padding = '0';
+            clonedDoc.body.style.overflow = 'visible';
+            clonedDoc.body.style.width = `${spec.widthPx}px`;
+            clonedDoc.body.style.height = `${liveHeight}px`;
+            clonedDoc.body.style.backgroundColor = paperBgColor;
+            clonedDoc.body.style.display = 'block';
+            clonedDoc.body.replaceChildren(clonedPage);
 
-          const noPrints = clonedDoc.querySelectorAll('.no-print');
-          noPrints.forEach((np) => {
-            (np as HTMLElement).style.display = 'none';
-          });
-        },
-      });
+            clonedPage.style.position = 'relative';
+            clonedPage.style.left = '0px';
+            clonedPage.style.top = '0px';
+            clonedPage.style.margin = '0px';
+            clonedPage.style.transform = 'none';
+            clonedPage.style.boxShadow = 'none';
+            clonedPage.style.border = 'none';
+            clonedPage.style.borderRadius = '0px';
+            clonedPage.style.outline = 'none';
+            clonedPage.style.width = `${spec.widthPx}px`;
+            clonedPage.style.maxWidth = `${spec.widthPx}px`;
+            clonedPage.style.minWidth = `${spec.widthPx}px`;
+            clonedPage.style.height = `${liveHeight}px`;
+            clonedPage.style.minHeight = `${liveHeight}px`;
+            clonedPage.style.maxHeight = 'none';
+            clonedPage.style.boxSizing = 'border-box';
+            clonedPage.style.overflow = 'visible';
+            clonedPage.style.backgroundColor = paperBgColor;
+            clonedPage.style.padding = `${marginPx}px`;
+          },
+        });
+      } finally {
+        for (const item of taggedSealIds) {
+          item.node.removeAttribute('data-vertical-seal-id');
+        }
+      }
 
       const imgData = canvas.toDataURL('image/png');
 
@@ -320,7 +757,6 @@ export async function exportDocumentToPdf(
     const pdfBlob = pdf.output('blob');
     const blobUrl = URL.createObjectURL(pdfBlob);
 
-    // Automatic direct download triggering
     try {
       const downloadAnchor = document.createElement('a');
       downloadAnchor.href = blobUrl;
@@ -346,7 +782,7 @@ export async function exportDocumentToPdf(
       filename,
     };
   } catch (error) {
-    console.error('Errore durante l\'esportazione del PDF:', error);
+    console.error("Errore durante l'esportazione del PDF:", error);
     throw error;
   }
 }

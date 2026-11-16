@@ -84,7 +84,19 @@ export const PageSettingsDrawer: React.FC<PageSettingsDrawerProps> = ({
   const activeBlock = activeBlockId
     ? doc.pages.flatMap((p) => p.blocks).find((b) => b.id === activeBlockId)
     : undefined;
-  const currentFontSize = activeBlock?.fontSize || doc.defaultFontSize;
+  const currentFontSize =
+    activeBlock?.type === 'table'
+      ? activeBlock.fontSize || activeBlock.tableData?.fontSize || doc.defaultFontSize || 16
+      : activeBlock?.type === 'list'
+      ? activeBlock.fontSize || Math.min(doc.defaultFontSize || 16, 22)
+      : activeBlock?.fontSize ||
+        (hasGrid
+          ? doc.defaultFontSize
+          : activeBlock?.type === 'heading1'
+          ? Math.round(doc.defaultFontSize * 1.5)
+          : activeBlock?.type === 'heading2'
+          ? Math.round(doc.defaultFontSize * 1.15)
+          : doc.defaultFontSize);
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end no-print bg-black/40 backdrop-blur-xs animate-in fade-in duration-150">
@@ -305,7 +317,7 @@ export const PageSettingsDrawer: React.FC<PageSettingsDrawerProps> = ({
                     {activeBlock ? 'Dimensione Blocco Selezionato:' : 'Dimensione Carattere (Font Size):'}
                   </span>
                   <span className="font-mono text-amber-950 font-bold px-1.5 py-0.5 bg-amber-100 rounded text-xs">
-                    {currentFontSize} pt
+                    {currentFontSize} px
                   </span>
                 </div>
                 <div className="flex items-center gap-2">

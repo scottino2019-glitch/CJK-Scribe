@@ -35,23 +35,42 @@ import {
   LIST_STYLE_OPTIONS,
   LIST_STYLE_CATEGORIES,
 } from '../utils/listStyles';
-import { CJK_FONTS } from '../data/fonts';
+import { CJK_FONTS, TRADITIONAL_COLORS } from '../data/fonts';
 import {
   PAPER_GRID_SPECS,
   getPaperBaseColorHex,
   getBlockExactGridStyle,
 } from '../utils/gridAlignment';
 import { EditableBlock } from './EditableBlock';
+import {
+  applyStyleToSelection,
+  hasActiveSelection,
+  fontsMatch,
+  extractPrimaryFontName,
+  stripInlineStyleFromHtml,
+  inspectDominantItemStyle,
+  SelectionStyleState,
+} from '../utils/textFormatting';
 
 interface DocumentPaperProps {
   document: CJKDocument;
   activeBlockId: string | null;
-  onSelectBlock: (blockId: string) => void;
-  onUpdateBlock: (blockId: string, updates: Partial<DocumentBlock>) => void;
+  activePageId?: string | null;
+  selectionStyle?: SelectionStyleState | null;
+  onSelectBlock: (blockId: string, pageId?: string) => void;
+  onSelectPage?: (pageId: string) => void;
+  onUpdateBlock: (
+    blockId: string,
+    updates:
+      | Partial<DocumentBlock>
+      | ((prevBlock: DocumentBlock) => Partial<DocumentBlock>)
+  ) => void;
   onDeleteBlock: (blockId: string) => void;
   onMoveBlock: (blockId: string, direction: 'up' | 'down') => void;
   onDuplicateBlock: (blockId: string) => void;
   onAddBlockAfter: (afterBlockId: string, type: BlockType) => void;
+  onAddBlockOnPage?: (pageId: string, type: BlockType) => void;
+  onOpenAddMenuOnPage?: (pageId: string) => void;
   onEditSeal: (seal: SealData, blockId: string) => void;
   onEditImage: (blockId: string, initialData?: ImageData, currentContent?: string) => void;
   onOpenRubyModal?: () => void;
@@ -69,25 +88,45 @@ interface DocumentPaperProps {
 export const DocumentPaper: React.FC<DocumentPaperProps> = ({
   document: doc,
   activeBlockId,
+  activePageId,
+  selectionStyle,
   onSelectBlock,
+  onSelectPage,
   onUpdateBlock,
   onDeleteBlock,
   onMoveBlock,
   onDuplicateBlock,
-  onAddBlockAfter,
+  onAddBlockOnPage,
   onEditSeal,
   onEditImage,
   onAddPage,
   onDeletePage,
-  onWritingModeChange,
-  onChangeFontSize,
-  onPaperFormatChange,
-  onPaperStyleChange,
-  onAlignTextToGrid,
-  onOpenPageSettings,
   showMarginGuides,
 }) => {
   const isVertical = doc.writingMode === 'vertical-rl';
+  const [openTablePopover, setOpenTablePopover] = useState<{
+    blockId: string;
+    type: 'size' | 'font' | 'color';
+  } | null>(null);
+  const [openListPopover, setOpenListPopover] = useState<{
+    blockId: string;
+    type: 'size' | 'font';
+  } | null>(null);
+
+  useEffect(() => {
+    if (!openTablePopover && !openListPopover) return;
+    const handleOutside = (e: MouseEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (!target?.closest('[data-table-toolbar]')) {
+        setOpenTablePopover(null);
+      }
+      if (!target?.closest('[data-list-toolbar]')) {
+        setOpenListPopover(null);
+      }
+    };
+    document.addEventListener('mousedown', handleOutside);
+    return () => document.removeEventListener('mousedown', handleOutside);
+  }, [openTablePopover, openListPopover]);
 
   // Paper base color in HEX for exact inline styling and PDF fidelity
   const paperBgHex = getPaperBaseColorHex(doc.paperStyle);
@@ -183,8 +222,100 @@ export const DocumentPaper: React.FC<DocumentPaperProps> = ({
     );
   };
 
+  // Focus an existing block or create a paragraph on empty page click
+  const focusBlockElement = (blockId: string) => {
+    setTimeout(() => {
+      const el = window.document.querySelector(`[data-block-id="${blockId}"]`) as HTMLElement | null;
+      if (el) {
+        el.focus();
+      }
+    }, 20);
+  };
+
+  // Render block action buttons (Move / Duplicate / Delete)
+  const renderBlockActionButtons = (
+    blockId: string,
+    blockIdx: number,
+    totalBlocks: number
+  ) => (
+    <div
+      onMouseDown={(e) => e.stopPropagation()}
+      onClick={(e) => e.stopPropagation()}
+      className="no-print inline-flex items-center gap-0.5 bg-white border border-stone-200 rounded-md p-0.5 shadow-2xs shrink-0"
+      style={{ writingMode: 'horizontal-tb' }}
+    >
+      <button
+        type="button"
+        disabled={blockIdx <= 0}
+        onMouseDown={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+        }}
+        onClick={(e) => {
+          e.stopPropagation();
+          onMoveBlock(blockId, 'up');
+        }}
+        className="p-1 text-stone-600 hover:text-stone-900 hover:bg-stone-100 rounded disabled:opacity-30 transition-colors"
+        title="Sposta blocco prima"
+      >
+        <ChevronUp className="w-3.5 h-3.5" />
+      </button>
+      <button
+        type="button"
+        disabled={blockIdx >= totalBlocks - 1}
+        onMouseDown={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+        }}
+        onClick={(e) => {
+          e.stopPropagation();
+          onMoveBlock(blockId, 'down');
+        }}
+        className="p-1 text-stone-600 hover:text-stone-900 hover:bg-stone-100 rounded disabled:opacity-30 transition-colors"
+        title="Sposta blocco dopo"
+      >
+        <ChevronDown className="w-3.5 h-3.5" />
+      </button>
+      <button
+        type="button"
+        onMouseDown={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+        }}
+        onClick={(e) => {
+          e.stopPropagation();
+          onDuplicateBlock(blockId);
+        }}
+        className="p-1 text-stone-600 hover:text-stone-900 hover:bg-stone-100 rounded transition-colors"
+        title="Duplica blocco"
+      >
+        <Copy className="w-3.5 h-3.5" />
+      </button>
+      <button
+        type="button"
+        onMouseDown={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+        }}
+        onClick={(e) => {
+          e.stopPropagation();
+          onDeleteBlock(blockId);
+        }}
+        className="p-1 text-red-600 hover:text-red-700 hover:bg-red-50 rounded transition-colors"
+        title="Elimina blocco"
+      >
+        <Trash2 className="w-3.5 h-3.5" />
+      </button>
+    </div>
+  );
+
   // Render block content
-  const renderBlockContent = (block: DocumentBlock) => {
+  const renderBlockContent = (
+    block: DocumentBlock,
+    pageId: string,
+    blockIdx: number,
+    totalBlocks: number
+  ) => {
     const blockFont = block.fontFamily || doc.defaultFontFamily;
     const blockFontSize = block.fontSize || doc.defaultFontSize;
     const blockColor = block.color || doc.primaryColor;
@@ -245,6 +376,10 @@ export const DocumentPaper: React.FC<DocumentPaperProps> = ({
           fontStyle: block.fontStyle || 'normal',
         };
 
+    const minEditableBounds: React.CSSProperties = isVertical
+      ? { minWidth: '36px', minHeight: '160px' }
+      : { minHeight: '1.6em', width: '100%' };
+
     switch (block.type) {
       case 'heading1': {
         const h1FontSize = block.fontSize || (isGridPaper
@@ -255,11 +390,12 @@ export const DocumentPaper: React.FC<DocumentPaperProps> = ({
             blockId={block.id}
             content={block.content}
             placeholder="Inserisci Titolo Principale..."
-            onFocus={() => onSelectBlock(block.id)}
+            onFocus={() => onSelectBlock(block.id, pageId)}
             onChange={(html) => onUpdateBlock(block.id, { content: html })}
             onBlur={(html) => onUpdateBlock(block.id, { content: html })}
             style={{
               ...commonStyle,
+              ...minEditableBounds,
               fontSize: `${h1FontSize}px`,
               fontWeight: 'bold',
             }}
@@ -279,11 +415,12 @@ export const DocumentPaper: React.FC<DocumentPaperProps> = ({
             blockId={block.id}
             content={block.content}
             placeholder="Inserisci Sottotitolo / Autore..."
-            onFocus={() => onSelectBlock(block.id)}
+            onFocus={() => onSelectBlock(block.id, pageId)}
             onChange={(html) => onUpdateBlock(block.id, { content: html })}
             onBlur={(html) => onUpdateBlock(block.id, { content: html })}
             style={{
               ...commonStyle,
+              ...minEditableBounds,
               fontSize: `${h2FontSize}px`,
               color: block.color || '#475569',
               fontWeight: '600',
@@ -301,10 +438,13 @@ export const DocumentPaper: React.FC<DocumentPaperProps> = ({
             blockId={block.id}
             content={block.content}
             placeholder="Inizia a scrivere il testo del documento..."
-            onFocus={() => onSelectBlock(block.id)}
+            onFocus={() => onSelectBlock(block.id, pageId)}
             onChange={(html) => onUpdateBlock(block.id, { content: html })}
             onBlur={(html) => onUpdateBlock(block.id, { content: html })}
-            style={commonStyle}
+            style={{
+              ...commonStyle,
+              ...minEditableBounds,
+            }}
             className={`whitespace-pre-wrap ${
               isGridPaper ? 'p-0 m-0' : 'py-1'
             } ${block.hasEmphasisDots ? 'cjk-emphasis-dot' : ''}`}
@@ -317,11 +457,12 @@ export const DocumentPaper: React.FC<DocumentPaperProps> = ({
             blockId={block.id}
             content={block.content}
             placeholder="Inserisci versi poetici..."
-            onFocus={() => onSelectBlock(block.id)}
+            onFocus={() => onSelectBlock(block.id, pageId)}
             onChange={(html) => onUpdateBlock(block.id, { content: html })}
             onBlur={(html) => onUpdateBlock(block.id, { content: html })}
             style={{
               ...commonStyle,
+              ...minEditableBounds,
               fontWeight: '500',
             }}
             className={`whitespace-pre-wrap ${
@@ -372,7 +513,10 @@ export const DocumentPaper: React.FC<DocumentPaperProps> = ({
 
       case 'seal-group':
         return (
-          <div className="py-2.5 flex items-center justify-end gap-3 flex-wrap">
+          <div
+            className="py-2.5 flex items-center justify-end gap-3 flex-wrap"
+            style={{ writingMode: 'horizontal-tb' }}
+          >
             {block.seals && block.seals.length > 0 ? (
               block.seals.map((s) => renderSeal(s, block.id))
             ) : (
@@ -383,26 +527,101 @@ export const DocumentPaper: React.FC<DocumentPaperProps> = ({
 
       case 'list': {
         const listData = block.listData || {
-          style: 'chinese-num',
+          style: 'arabic-dot' as ListNumberingType,
           items: [{ id: '1', text: '' }],
         };
-        const currentStyle = listData.style || 'chinese-num';
+        const currentStyle = listData.style || 'arabic-dot';
+        const listFontSize = block.fontSize || Math.min(doc.defaultFontSize || 16, 22);
+        const isSelInList = !!selectionStyle && selectionStyle.blockId === block.id;
+        const isListTextSelected =
+          (isSelInList && !!selectionStyle?.hasSelection) || hasActiveSelection(block.id);
+        const displayedListSize = (isSelInList && selectionStyle?.fontSize) || listFontSize;
+        const displayedListFont = (isSelInList && selectionStyle?.fontFamily) || blockFont;
+
+        const applyListSize = (newSz: number) => {
+          const bounded = Math.max(10, Math.min(72, newSz));
+          if (hasActiveSelection(block.id)) {
+            const res = applyStyleToSelection({ fontSize: bounded }, block.id);
+            if (res) return;
+          }
+          onUpdateBlock(block.id, (prev) => {
+            const prevList = prev.listData || listData;
+            return {
+              fontSize: bounded,
+              listData: {
+                ...prevList,
+                items: prevList.items.map((it) => ({
+                  ...it,
+                  text: stripInlineStyleFromHtml(it.text, 'fontSize'),
+                })),
+              },
+            };
+          });
+        };
+
+        const applyListFont = (fontCss: string) => {
+          if (hasActiveSelection(block.id)) {
+            const res = applyStyleToSelection({ fontFamily: fontCss }, block.id);
+            if (res) return;
+          }
+          onUpdateBlock(block.id, (prev) => {
+            const prevList = prev.listData || listData;
+            return {
+              fontFamily: fontCss,
+              listData: {
+                ...prevList,
+                items: prevList.items.map((it) => ({
+                  ...it,
+                  text: stripInlineStyleFromHtml(it.text, 'fontFamily'),
+                })),
+              },
+            };
+          });
+        };
+
+        const listHorizontalStyle: React.CSSProperties = {
+          fontFamily: blockFont,
+          fontSize: `${listFontSize}px`,
+          color: blockColor,
+          textAlign: block.textAlign || 'left',
+          lineHeight: block.lineHeight ?? 1.6,
+          letterSpacing:
+            block.letterSpacing !== undefined ? `${block.letterSpacing}em` : '0.03em',
+          fontWeight: block.fontWeight || 'normal',
+          fontStyle: block.fontStyle || 'normal',
+          writingMode: 'horizontal-tb',
+        };
 
         return (
-          <div className="py-1.5 space-y-2">
-            {/* List Header & Style Selector (Legible text size) */}
-            <div className="no-print flex items-center justify-between gap-2 pb-1.5 border-b border-stone-200/80 bg-stone-50/70 p-2 rounded-lg">
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-bold text-stone-800">Stile Elenco:</span>
+          <div className="py-1.5 space-y-2 w-full" style={{ writingMode: 'horizontal-tb' }}>
+            {/* List Header with Stile Elenco, Font, Dim, +Voce and Block Actions */}
+            <div
+              data-list-toolbar="true"
+              onClick={(e) => {
+                e.stopPropagation();
+                onSelectBlock(block.id, pageId);
+              }}
+              className="no-print flex items-center justify-between gap-2 pb-1.5 border-b border-stone-200/80 bg-stone-50/95 p-2 rounded-lg flex-wrap text-xs shadow-2xs"
+            >
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-xs font-bold text-stone-800">Elenco:</span>
                 <select
                   value={currentStyle}
+                  onMouseDown={(e) => e.stopPropagation()}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onSelectBlock(block.id, pageId);
+                  }}
                   onChange={(e) => {
                     const newStyle = e.target.value as ListNumberingType;
-                    onUpdateBlock(block.id, {
-                      listData: { ...listData, style: newStyle },
-                    });
+                    onUpdateBlock(block.id, (prev) => ({
+                      listData: {
+                        ...(prev.listData || listData),
+                        style: newStyle,
+                      },
+                    }));
                   }}
-                  className="text-xs sm:text-sm bg-white border border-stone-300 rounded-md px-2.5 py-1 text-stone-800 font-medium focus:ring-1 focus:ring-amber-700 shadow-2xs max-w-[200px] truncate"
+                  className="text-xs bg-white border border-stone-300 rounded-md px-2 py-1 text-stone-800 font-medium focus:ring-1 focus:ring-amber-700 shadow-2xs max-w-[185px] truncate cursor-pointer"
                 >
                   {LIST_STYLE_CATEGORIES.map((cat) => (
                     <optgroup key={cat.id} label={cat.name}>
@@ -414,24 +633,187 @@ export const DocumentPaper: React.FC<DocumentPaperProps> = ({
                     </optgroup>
                   ))}
                 </select>
+
+                {/* Inline Font Size for List (selective when text selected, otherwise uniform list + numbers) */}
+                <div
+                  className={`relative flex items-center gap-1 bg-white border rounded px-1.5 py-0.5 ${
+                    isListTextSelected
+                      ? 'border-amber-600 ring-1 ring-amber-500/40'
+                      : 'border-stone-300'
+                  }`}
+                >
+                  <span className="text-[11px] text-stone-500 font-medium">Dim:</span>
+                  <button
+                    type="button"
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                    }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      applyListSize(displayedListSize - 2);
+                    }}
+                    className="px-1.5 py-0.5 text-xs font-bold text-stone-700 hover:bg-stone-100 rounded"
+                    title="Riduci dimensione elenco o selezione"
+                  >
+                    A-
+                  </button>
+                  <button
+                    type="button"
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                    }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setOpenListPopover((prev) =>
+                        prev?.blockId === block.id && prev.type === 'size'
+                          ? null
+                          : { blockId: block.id, type: 'size' }
+                      );
+                    }}
+                    className="font-mono text-xs font-bold text-amber-900 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded px-1.5 py-0.5 min-w-[46px] text-center flex items-center justify-center gap-0.5"
+                    title="Scegli dimensione in px"
+                  >
+                    <span>{displayedListSize}px</span>
+                    <ChevronDown className="w-3 h-3" />
+                  </button>
+                  <button
+                    type="button"
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                    }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      applyListSize(displayedListSize + 2);
+                    }}
+                    className="px-1.5 py-0.5 text-xs font-bold text-stone-700 hover:bg-stone-100 rounded"
+                    title="Aumenta dimensione elenco o selezione"
+                  >
+                    A+
+                  </button>
+
+                  {openListPopover?.blockId === block.id && openListPopover.type === 'size' && (
+                    <div
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                      }}
+                      className="absolute top-full left-0 mt-1 z-50 w-44 bg-white border border-stone-200 rounded-xl shadow-2xl p-1.5 grid grid-cols-3 gap-1"
+                    >
+                      {[12, 14, 16, 18, 20, 22, 24, 28, 32, 36, 40, 48].map((sz) => (
+                        <button
+                          key={sz}
+                          type="button"
+                          onMouseDown={(e) => e.preventDefault()}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setOpenListPopover(null);
+                            applyListSize(sz);
+                          }}
+                          className={`px-1.5 py-1 text-xs font-mono rounded ${
+                            displayedListSize === sz
+                              ? 'bg-amber-800 text-white font-bold'
+                              : 'text-stone-700 hover:bg-amber-50'
+                          }`}
+                        >
+                          {sz}px
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Inline Font Family for List (selective when text selected, otherwise whole list) */}
+                <div className="relative">
+                  <button
+                    type="button"
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                    }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setOpenListPopover((prev) =>
+                        prev?.blockId === block.id && prev.type === 'font'
+                          ? null
+                          : { blockId: block.id, type: 'font' }
+                      );
+                    }}
+                    className={`text-xs bg-white hover:bg-stone-50 border rounded px-2 py-1 text-stone-900 font-serif max-w-[150px] flex items-center gap-1 ${
+                      isListTextSelected
+                        ? 'border-amber-600 ring-1 ring-amber-500/40'
+                        : 'border-stone-300'
+                    }`}
+                    title="Scegli font elenco o selezione"
+                  >
+                    <span className="truncate" style={{ fontFamily: displayedListFont }}>
+                      {CJK_FONTS.find((f) => fontsMatch(f.cssFamily, displayedListFont))
+                        ?.nativeName ||
+                        extractPrimaryFontName(displayedListFont) ||
+                        'Font'}
+                    </span>
+                    <ChevronDown className="w-3 h-3 text-stone-500 shrink-0" />
+                  </button>
+
+                  {openListPopover?.blockId === block.id && openListPopover.type === 'font' && (
+                    <div
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                      }}
+                      className="absolute top-full left-0 mt-1 z-50 w-64 bg-white border border-stone-200 rounded-xl shadow-2xl p-1.5 max-h-64 overflow-y-auto"
+                    >
+                      {CJK_FONTS.map((f) => (
+                        <button
+                          key={f.id}
+                          type="button"
+                          onMouseDown={(e) => e.preventDefault()}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setOpenListPopover(null);
+                            applyListFont(f.cssFamily);
+                          }}
+                          className={`w-full text-left px-2 py-1.5 text-xs rounded hover:bg-amber-50 truncate ${
+                            fontsMatch(f.cssFamily, displayedListFont)
+                              ? 'bg-amber-100 text-amber-950 font-semibold'
+                              : 'text-stone-800'
+                          }`}
+                          style={{ fontFamily: f.cssFamily }}
+                        >
+                          {f.nativeName}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
 
-              <button
-                type="button"
-                onClick={() => {
-                  const newItems = [
-                    ...listData.items,
-                    { id: `li_${Date.now()}`, text: '' },
-                  ];
-                  onUpdateBlock(block.id, {
-                    listData: { ...listData, items: newItems },
-                  });
-                }}
-                className="px-2.5 py-1 text-xs bg-white hover:bg-stone-100 border border-stone-300 text-stone-800 rounded-md flex items-center gap-1 font-semibold shadow-2xs transition-colors"
-              >
-                <Plus className="w-3.5 h-3.5 text-amber-800" />
-                <span>+ Voce</span>
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onMouseDown={(e) => e.stopPropagation()}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    const newItem = { id: `li_${Date.now()}`, text: '' };
+                    onUpdateBlock(block.id, (prev) => {
+                      const prevList = prev.listData || listData;
+                      return {
+                        listData: {
+                          ...prevList,
+                          items: [...prevList.items, newItem],
+                        },
+                      };
+                    });
+                  }}
+                  className="px-2.5 py-1 text-xs bg-white hover:bg-stone-100 border border-stone-300 text-stone-800 rounded-md flex items-center gap-1 font-semibold shadow-2xs transition-colors"
+                >
+                  <Plus className="w-3.5 h-3.5 text-amber-800" />
+                  <span>+ Voce</span>
+                </button>
+                {renderBlockActionButtons(block.id, blockIdx, totalBlocks)}
+              </div>
             </div>
 
             {/* List items */}
@@ -439,68 +821,106 @@ export const DocumentPaper: React.FC<DocumentPaperProps> = ({
               {listData.items.map((item, idx) => {
                 const marker = renderListMarker(currentStyle, idx, item.checked);
                 const isCheckable = currentStyle === 'checkbox';
+                const dominant = inspectDominantItemStyle(item.text);
+                const markerFontSize = dominant.fontSize || listFontSize;
+                const markerColor = dominant.color || blockColor;
 
                 return (
-                  <div key={item.id} className="flex items-start gap-2.5 group/item">
+                  <div key={item.id} className="flex items-baseline gap-2.5 group/item">
                     <span
-                      onClick={() => {
+                      onClick={(e) => {
+                        e.stopPropagation();
                         if (isCheckable) {
-                          const newItems = listData.items.map((it) =>
-                            it.id === item.id ? { ...it, checked: !it.checked } : it
-                          );
-                          onUpdateBlock(block.id, {
-                            listData: { ...listData, items: newItems },
+                          onUpdateBlock(block.id, (prev) => {
+                            const prevList = prev.listData || listData;
+                            return {
+                              listData: {
+                                ...prevList,
+                                items: prevList.items.map((it) =>
+                                  it.id === item.id ? { ...it, checked: !it.checked } : it
+                                ),
+                              },
+                            };
                           });
                         }
                       }}
-                      className={`select-none shrink-0 font-bold min-w-[28px] text-right pt-0.5 ${
+                      className={`select-none shrink-0 font-semibold min-w-[26px] text-right ${
                         isCheckable
                           ? 'cursor-pointer text-amber-900 hover:scale-110'
                           : 'text-stone-700'
                       }`}
                       style={{
                         fontFamily: blockFont,
-                        fontSize: `${blockFontSize}px`,
+                        fontSize: `${markerFontSize}px`,
+                        color: isCheckable ? undefined : markerColor,
+                        lineHeight: block.lineHeight ?? 1.6,
                       }}
                     >
                       {marker}
                     </span>
 
-                    <div
-                      contentEditable
-                      suppressContentEditableWarning
-                      data-placeholder="Scrivi elemento elenco..."
-                      onFocus={() => onSelectBlock(block.id)}
-                      onBlur={(e) => {
-                        const newItems = listData.items.map((it) =>
-                          it.id === item.id
-                            ? { ...it, text: e.currentTarget.innerText }
-                            : it
-                        );
-                        onUpdateBlock(block.id, {
-                          listData: { ...listData, items: newItems },
+                    <EditableBlock
+                      blockId={`${block.id}_li_${item.id}`}
+                      parentBlockId={block.id}
+                      dataAttrName="data-cell-id"
+                      content={item.text}
+                      placeholder="Scrivi elemento elenco..."
+                      onFocus={() => onSelectBlock(block.id, pageId)}
+                      onChange={(html) => {
+                        onUpdateBlock(block.id, (prev) => {
+                          const prevList = prev.listData || listData;
+                          return {
+                            listData: {
+                              ...prevList,
+                              items: prevList.items.map((it) =>
+                                it.id === item.id ? { ...it, text: html } : it
+                              ),
+                            },
+                          };
+                        });
+                      }}
+                      onBlur={(html) => {
+                        onUpdateBlock(block.id, (prev) => {
+                          const prevList = prev.listData || listData;
+                          const existing = prevList.items.find((it) => it.id === item.id);
+                          if (existing && existing.text === html) return {};
+                          return {
+                            listData: {
+                              ...prevList,
+                              items: prevList.items.map((it) =>
+                                it.id === item.id ? { ...it, text: html } : it
+                              ),
+                            },
+                          };
                         });
                       }}
                       style={{
-                        ...commonStyle,
+                        ...listHorizontalStyle,
                         textDecoration: item.checked ? 'line-through' : 'none',
                         opacity: item.checked ? 0.6 : 1,
                       }}
-                      className="flex-1 outline-none min-h-[1.5em] py-0.5 whitespace-pre-wrap"
-                    >
-                      {item.text}
-                    </div>
+                      className={`flex-1 outline-none min-h-[1.5em] py-0.5 whitespace-pre-wrap ${
+                        block.hasEmphasisDots ? 'cjk-emphasis-dot' : ''
+                      }`}
+                    />
 
                     {listData.items.length > 1 && (
                       <button
                         type="button"
-                        onClick={() => {
-                          const newItems = listData.items.filter((it) => it.id !== item.id);
-                          onUpdateBlock(block.id, {
-                            listData: { ...listData, items: newItems },
+                        onMouseDown={(e) => e.stopPropagation()}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onUpdateBlock(block.id, (prev) => {
+                            const prevList = prev.listData || listData;
+                            return {
+                              listData: {
+                                ...prevList,
+                                items: prevList.items.filter((it) => it.id !== item.id),
+                              },
+                            };
                           });
                         }}
-                        className="no-print p-1 text-stone-300 hover:text-red-600 rounded transition-colors"
+                        className="no-print p-1 text-stone-400 hover:text-red-600 rounded transition-colors self-center"
                         title="Rimuovi voce"
                       >
                         <Trash2 className="w-3.5 h-3.5" />
@@ -538,142 +958,375 @@ export const DocumentPaper: React.FC<DocumentPaperProps> = ({
         const tableFontSize = block.fontSize || tableData.fontSize || doc.defaultFontSize || 16;
         const tableFontFamily = block.fontFamily || tableData.fontFamily || doc.defaultFontFamily;
 
+        const isSelInTable = !!selectionStyle && selectionStyle.blockId === block.id;
+        const isTableTextSelected =
+          (isSelInTable && !!selectionStyle?.hasSelection) || hasActiveSelection(block.id);
+        const displayedTableSize = (isSelInTable && selectionStyle?.fontSize) || tableFontSize;
+        const displayedTableFont = (isSelInTable && selectionStyle?.fontFamily) || tableFontFamily;
+        const displayedTableColor =
+          (isSelInTable && selectionStyle?.color) || block.color || doc.primaryColor;
+
+        const applyTableSize = (newSz: number) => {
+          const bounded = Math.max(10, Math.min(72, newSz));
+          if (hasActiveSelection(block.id)) {
+            const res = applyStyleToSelection({ fontSize: bounded }, block.id);
+            if (res) return;
+          }
+          onUpdateBlock(block.id, (prev) => {
+            const prevTable = prev.tableData || tableData;
+            return {
+              fontSize: bounded,
+              tableData: {
+                ...prevTable,
+                fontSize: bounded,
+                cells: prevTable.cells.map((row) =>
+                  row.map((c) => ({
+                    ...c,
+                    fontSize: undefined,
+                    content: stripInlineStyleFromHtml(c.content, 'fontSize'),
+                  }))
+                ),
+              },
+            };
+          });
+        };
+
+        const applyTableFont = (fontCss: string) => {
+          if (hasActiveSelection(block.id)) {
+            const res = applyStyleToSelection({ fontFamily: fontCss }, block.id);
+            if (res) return;
+          }
+          onUpdateBlock(block.id, (prev) => {
+            const prevTable = prev.tableData || tableData;
+            return {
+              fontFamily: fontCss,
+              tableData: {
+                ...prevTable,
+                fontFamily: fontCss,
+                cells: prevTable.cells.map((row) =>
+                  row.map((c) => ({
+                    ...c,
+                    fontFamily: undefined,
+                    content: stripInlineStyleFromHtml(c.content, 'fontFamily'),
+                  }))
+                ),
+              },
+            };
+          });
+        };
+
+        const applyTableColor = (colorHex: string) => {
+          if (hasActiveSelection(block.id)) {
+            const res = applyStyleToSelection({ color: colorHex }, block.id);
+            if (res) return;
+          }
+          onUpdateBlock(block.id, (prev) => {
+            const prevTable = prev.tableData || tableData;
+            return {
+              color: colorHex,
+              tableData: {
+                ...prevTable,
+                cells: prevTable.cells.map((row) =>
+                  row.map((c) => ({
+                    ...c,
+                    textColor: undefined,
+                    content: stripInlineStyleFromHtml(c.content, 'color'),
+                  }))
+                ),
+              },
+            };
+          });
+        };
+
+        const colCount = cells[0]?.length || tableData.cols || 1;
+
         return (
-          <div className="py-2.5 my-2 w-full space-y-2">
+          <div className="py-2.5 my-2 w-full space-y-2" style={{ writingMode: 'horizontal-tb' }}>
             {/* Inline Table Control Bar */}
-            <div className="no-print bg-stone-100/90 border border-stone-200 p-2 rounded-lg flex items-center justify-between gap-2 flex-wrap text-xs shadow-2xs">
+            <div
+              data-table-toolbar="true"
+              onClick={(e) => {
+                e.stopPropagation();
+                onSelectBlock(block.id, pageId);
+              }}
+              className="no-print bg-stone-100/95 border border-stone-200 p-2 rounded-lg flex items-center justify-between gap-2 flex-wrap text-xs shadow-2xs"
+            >
               <div className="flex items-center gap-2 flex-wrap">
                 <span className="text-xs font-bold text-stone-800">Tabella:</span>
 
-                {/* Font Size controls for the table */}
-                <div className="flex items-center gap-1 bg-white border border-stone-300 rounded px-1.5 py-0.5">
-                  <span className="text-[11px] text-stone-500 font-medium">Font:</span>
+                {/* Font Size controls for the table (selective when cell text is highlighted!) */}
+                <div
+                  className={`relative flex items-center gap-1 bg-white border rounded px-1.5 py-0.5 ${
+                    isTableTextSelected
+                      ? 'border-amber-600 ring-1 ring-amber-500/40'
+                      : 'border-stone-300'
+                  }`}
+                >
+                  <span className="text-[11px] text-stone-500 font-medium">Dim:</span>
                   <button
                     type="button"
-                    onMouseDown={(e) => e.preventDefault()}
-                    onClick={() => {
-                      const newSz = Math.max(10, tableFontSize - 2);
-                      onUpdateBlock(block.id, {
-                        fontSize: newSz,
-                        tableData: { ...block.tableData!, fontSize: newSz },
-                      });
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                    }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      applyTableSize(displayedTableSize - 2);
                     }}
                     className="px-1.5 py-0.5 text-xs font-bold text-stone-700 hover:bg-stone-100 rounded"
-                    title="Riduci font tabella"
+                    title="Riduci dimensione (solo selezione nella cella o intera tabella)"
                   >
                     A-
                   </button>
-                  <span className="font-mono text-xs font-bold text-amber-900 min-w-[30px] text-center">
-                    {tableFontSize}px
-                  </span>
                   <button
                     type="button"
-                    onMouseDown={(e) => e.preventDefault()}
-                    onClick={() => {
-                      const newSz = Math.min(48, tableFontSize + 2);
-                      onUpdateBlock(block.id, {
-                        fontSize: newSz,
-                        tableData: { ...block.tableData!, fontSize: newSz },
-                      });
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                    }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setOpenTablePopover((prev) =>
+                        prev?.blockId === block.id && prev.type === 'size'
+                          ? null
+                          : { blockId: block.id, type: 'size' }
+                      );
+                    }}
+                    className="font-mono text-xs font-bold text-amber-900 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded px-1.5 py-0.5 min-w-[46px] text-center flex items-center justify-center gap-0.5"
+                    title="Scegli dimensione in px (mantiene la selezione nella cella)"
+                  >
+                    <span>{displayedTableSize}px</span>
+                    <ChevronDown className="w-3 h-3" />
+                  </button>
+                  <button
+                    type="button"
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                    }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      applyTableSize(displayedTableSize + 2);
                     }}
                     className="px-1.5 py-0.5 text-xs font-bold text-stone-700 hover:bg-stone-100 rounded"
-                    title="Aumenta font tabella"
+                    title="Aumenta dimensione (solo selezione nella cella o intera tabella)"
                   >
                     A+
                   </button>
-                  <select
-                    value={tableFontSize}
-                    onChange={(e) => {
-                      const newSz = parseInt(e.target.value);
-                      onUpdateBlock(block.id, {
-                        fontSize: newSz,
-                        tableData: { ...block.tableData!, fontSize: newSz },
-                      });
-                    }}
-                    className="text-xs bg-stone-50 border border-stone-200 rounded px-1 py-0.5 font-medium ml-1"
-                  >
-                    {[12, 14, 16, 18, 20, 24, 28, 32].map((sz) => (
-                      <option key={sz} value={sz}>{sz}px</option>
-                    ))}
-                  </select>
+
+                  {openTablePopover?.blockId === block.id &&
+                    openTablePopover.type === 'size' && (
+                      <div
+                        onMouseDown={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                        }}
+                        className="absolute top-full left-0 mt-1 z-50 w-44 bg-white border border-stone-200 rounded-xl shadow-2xl p-1.5 grid grid-cols-3 gap-1"
+                      >
+                        {[12, 14, 16, 18, 20, 22, 24, 28, 32, 36, 40, 48].map((sz) => (
+                          <button
+                            key={sz}
+                            type="button"
+                            onMouseDown={(e) => e.preventDefault()}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setOpenTablePopover(null);
+                              applyTableSize(sz);
+                            }}
+                            className={`px-1.5 py-1 text-xs font-mono rounded ${
+                              displayedTableSize === sz
+                                ? 'bg-amber-800 text-white font-bold'
+                                : 'text-stone-700 hover:bg-amber-50'
+                            }`}
+                          >
+                            {sz}px
+                          </button>
+                        ))}
+                      </div>
+                    )}
                 </div>
 
-                {/* Font Family selector for the table */}
-                <select
-                  value={tableFontFamily}
-                  onChange={(e) => {
-                    const newF = e.target.value;
-                    onUpdateBlock(block.id, {
-                      fontFamily: newF,
-                      tableData: { ...block.tableData!, fontFamily: newF },
-                    });
-                  }}
-                  className="text-xs bg-white border border-stone-300 rounded px-2 py-0.5 text-stone-900 font-serif max-w-[130px] truncate"
-                >
-                  <option value={doc.defaultFontFamily}>Font Predefinito</option>
-                  {CJK_FONTS.map((f) => (
-                    <option key={f.id} value={f.cssFamily}>{f.nativeName}</option>
-                  ))}
-                </select>
+                {/* Font Family selector for the table (selective when cell text is highlighted!) */}
+                <div className="relative">
+                  <button
+                    type="button"
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                    }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setOpenTablePopover((prev) =>
+                        prev?.blockId === block.id && prev.type === 'font'
+                          ? null
+                          : { blockId: block.id, type: 'font' }
+                      );
+                    }}
+                    className={`text-xs bg-white hover:bg-stone-50 border rounded px-2 py-1 text-stone-900 font-serif max-w-[160px] flex items-center gap-1 ${
+                      isTableTextSelected
+                        ? 'border-amber-600 ring-1 ring-amber-500/40'
+                        : 'border-stone-300'
+                    }`}
+                    title="Scegli font (solo selezione nella cella o intera tabella)"
+                  >
+                    <span className="truncate" style={{ fontFamily: displayedTableFont }}>
+                      {CJK_FONTS.find((f) => fontsMatch(f.cssFamily, displayedTableFont))
+                        ?.nativeName ||
+                        extractPrimaryFontName(displayedTableFont) ||
+                        'Font'}
+                    </span>
+                    <ChevronDown className="w-3 h-3 text-stone-500 shrink-0" />
+                  </button>
+
+                  {openTablePopover?.blockId === block.id &&
+                    openTablePopover.type === 'font' && (
+                      <div
+                        onMouseDown={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                        }}
+                        className="absolute top-full left-0 mt-1 z-50 w-64 bg-white border border-stone-200 rounded-xl shadow-2xl p-1.5 max-h-64 overflow-y-auto"
+                      >
+                        {CJK_FONTS.map((f) => (
+                          <button
+                            key={f.id}
+                            type="button"
+                            onMouseDown={(e) => e.preventDefault()}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setOpenTablePopover(null);
+                              applyTableFont(f.cssFamily);
+                            }}
+                            className={`w-full text-left px-2 py-1.5 text-xs rounded hover:bg-amber-50 truncate ${
+                              fontsMatch(f.cssFamily, displayedTableFont)
+                                ? 'bg-amber-100 text-amber-950 font-semibold'
+                                : 'text-stone-800'
+                            }`}
+                            style={{ fontFamily: f.cssFamily }}
+                          >
+                            {f.nativeName}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                </div>
+
+                {/* Inline Color Picker for the table */}
+                <div className="relative">
+                  <button
+                    type="button"
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                    }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setOpenTablePopover((prev) =>
+                        prev?.blockId === block.id && prev.type === 'color'
+                          ? null
+                          : { blockId: block.id, type: 'color' }
+                      );
+                    }}
+                    className="flex items-center gap-1 px-2 py-1 bg-white hover:bg-stone-50 border border-stone-300 rounded text-xs shadow-2xs"
+                    title="Colore testo (selezione o intera tabella)"
+                  >
+                    <span
+                      className="w-3.5 h-3.5 rounded-full border border-stone-300 inline-block"
+                      style={{ backgroundColor: displayedTableColor }}
+                    />
+                  </button>
+
+                  {openTablePopover?.blockId === block.id &&
+                    openTablePopover.type === 'color' && (
+                      <div
+                        onMouseDown={(e) => {
+                          if ((e.target as HTMLElement)?.tagName !== 'INPUT') {
+                            e.preventDefault();
+                          }
+                          e.stopPropagation();
+                        }}
+                        className="absolute top-full left-0 mt-1 z-50 w-52 bg-white border border-stone-200 rounded-xl shadow-2xl p-2"
+                      >
+                        <div className="grid grid-cols-5 gap-1.5 mb-2">
+                          {TRADITIONAL_COLORS.slice(0, 10).map((col) => (
+                            <button
+                              key={col.hex}
+                              type="button"
+                              onMouseDown={(e) => e.preventDefault()}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setOpenTablePopover(null);
+                                applyTableColor(col.hex);
+                              }}
+                              className="w-6 h-6 rounded-full border border-stone-200 hover:scale-110 transition-transform mx-auto"
+                              style={{ backgroundColor: col.hex }}
+                              title={col.name}
+                            />
+                          ))}
+                        </div>
+                        <div className="flex items-center gap-2 pt-1.5 border-t border-stone-100 text-[11px]">
+                          <span className="text-stone-500">Altro:</span>
+                          <input
+                            type="color"
+                            value={
+                              displayedTableColor.startsWith('#')
+                                ? displayedTableColor
+                                : '#1C1917'
+                            }
+                            onChange={(e) => applyTableColor(e.target.value)}
+                            className="w-6 h-6 rounded cursor-pointer border border-stone-300"
+                          />
+                        </div>
+                      </div>
+                    )}
+                </div>
               </div>
 
-              {/* Table structural buttons */}
+              {/* Table structural buttons + Block Move/Delete actions */}
               <div className="flex items-center gap-1 flex-wrap">
                 <button
                   type="button"
-                  onClick={() => {
-                    const newRow: TableCell[] = cells[0].map((_, cIdx) => ({
-                      id: `cell_${cells.length}_${cIdx}_${Date.now()}`,
-                      content: '—',
-                      align: 'center',
-                    }));
-                    onUpdateBlock(block.id, {
-                      tableData: {
-                        ...block.tableData!,
-                        rows: block.tableData!.rows + 1,
-                        cells: [...cells, newRow],
-                      },
+                  onMouseDown={(e) => e.stopPropagation()}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onUpdateBlock(block.id, (prev) => {
+                      const prevTable = prev.tableData || tableData;
+                      const colsLen = prevTable.cells[0]?.length || prevTable.cols || 2;
+                      const newRow: TableCell[] = Array.from({ length: colsLen }).map((_, cIdx) => ({
+                        id: `cell_${prevTable.cells.length}_${cIdx}_${Date.now()}`,
+                        content: '',
+                        align: prev.textAlign === 'justify' ? 'left' : prev.textAlign || 'center',
+                      }));
+                      return {
+                        tableData: {
+                          ...prevTable,
+                          rows: prevTable.rows + 1,
+                          cells: [...prevTable.cells, newRow],
+                        },
+                      };
                     });
                   }}
                   className="px-2 py-1 text-xs bg-white hover:bg-stone-100 border border-stone-200 rounded text-stone-700 flex items-center gap-1 font-medium"
                 >
-                  <Plus className="w-3 h-3 text-amber-800" /> + Riga
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    const newCells = cells.map((r, ri) => [
-                      ...r,
-                      {
-                        id: `cell_${ri}_${r.length}_${Date.now()}`,
-                        content: ri === 0 && headers ? `Colonna ${r.length + 1}` : '—',
-                        align: 'center' as const,
-                      },
-                    ]);
-                    onUpdateBlock(block.id, {
-                      tableData: {
-                        ...block.tableData!,
-                        cols: block.tableData!.cols + 1,
-                        cells: newCells,
-                      },
-                    });
-                  }}
-                  className="px-2 py-1 text-xs bg-white hover:bg-stone-100 border border-stone-200 rounded text-stone-700 flex items-center gap-1 font-medium"
-                >
-                  <Plus className="w-3 h-3 text-amber-800" /> + Colonna
+                  <Plus className="w-3 h-3 text-amber-800" /> Riga
                 </button>
 
                 {cells.length > 1 && (
                   <button
                     type="button"
-                    onClick={() => {
-                      onUpdateBlock(block.id, {
-                        tableData: {
-                          ...block.tableData!,
-                          rows: block.tableData!.rows - 1,
-                          cells: cells.slice(0, -1),
-                        },
+                    onMouseDown={(e) => e.stopPropagation()}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onUpdateBlock(block.id, (prev) => {
+                        const prevTable = prev.tableData || tableData;
+                        if (prevTable.cells.length <= 1) return {};
+                        return {
+                          tableData: {
+                            ...prevTable,
+                            rows: Math.max(1, prevTable.rows - 1),
+                            cells: prevTable.cells.slice(0, -1),
+                          },
+                        };
                       });
                     }}
                     className="px-2 py-1 text-xs bg-white hover:bg-red-50 text-red-700 border border-stone-200 rounded flex items-center gap-1"
@@ -684,9 +1337,71 @@ export const DocumentPaper: React.FC<DocumentPaperProps> = ({
 
                 <button
                   type="button"
-                  onClick={() => {
-                    onUpdateBlock(block.id, {
-                      tableData: { ...block.tableData!, bordered: !bordered },
+                  onMouseDown={(e) => e.stopPropagation()}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onUpdateBlock(block.id, (prev) => {
+                      const prevTable = prev.tableData || tableData;
+                      const newCells = prevTable.cells.map((r, ri) => [
+                        ...r,
+                        {
+                          id: `cell_${ri}_${r.length}_${Date.now()}`,
+                          content:
+                            ri === 0 && prevTable.headers ? `Colonna ${r.length + 1}` : '',
+                          isHeader: ri === 0 && prevTable.headers,
+                          align:
+                            prev.textAlign === 'justify' ? 'left' : prev.textAlign || 'center',
+                        },
+                      ]);
+                      return {
+                        tableData: {
+                          ...prevTable,
+                          cols: prevTable.cols + 1,
+                          cells: newCells,
+                        },
+                      };
+                    });
+                  }}
+                  className="px-2 py-1 text-xs bg-white hover:bg-stone-100 border border-stone-200 rounded text-stone-700 flex items-center gap-1 font-medium"
+                >
+                  <Plus className="w-3 h-3 text-amber-800" /> Colonna
+                </button>
+
+                {colCount > 1 && (
+                  <button
+                    type="button"
+                    onMouseDown={(e) => e.stopPropagation()}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onUpdateBlock(block.id, (prev) => {
+                        const prevTable = prev.tableData || tableData;
+                        const currentCols = prevTable.cells[0]?.length || 0;
+                        if (currentCols <= 1) return {};
+                        return {
+                          tableData: {
+                            ...prevTable,
+                            cols: Math.max(1, prevTable.cols - 1),
+                            cells: prevTable.cells.map((r) => r.slice(0, -1)),
+                          },
+                        };
+                      });
+                    }}
+                    className="px-2 py-1 text-xs bg-white hover:bg-red-50 text-red-700 border border-stone-200 rounded flex items-center gap-1"
+                  >
+                    - Col
+                  </button>
+                )}
+
+                <button
+                  type="button"
+                  onMouseDown={(e) => e.stopPropagation()}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onUpdateBlock(block.id, (prev) => {
+                      const prevTable = prev.tableData || tableData;
+                      return {
+                        tableData: { ...prevTable, bordered: !prevTable.bordered },
+                      };
                     });
                   }}
                   className={`px-2 py-1 text-xs rounded border transition-colors ${
@@ -695,10 +1410,32 @@ export const DocumentPaper: React.FC<DocumentPaperProps> = ({
                 >
                   Bordi
                 </button>
+
+                <button
+                  type="button"
+                  onMouseDown={(e) => e.stopPropagation()}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onUpdateBlock(block.id, (prev) => {
+                      const prevTable = prev.tableData || tableData;
+                      return {
+                        tableData: { ...prevTable, compact: !prevTable.compact },
+                      };
+                    });
+                  }}
+                  className={`px-2 py-1 text-xs rounded border transition-colors ${
+                    compact ? 'bg-amber-100 border-amber-300 text-amber-900 font-semibold' : 'bg-white border-stone-200 text-stone-600'
+                  }`}
+                  title="Riduci o aumenta la spaziatura interna delle celle"
+                >
+                  Compatta
+                </button>
+
+                {renderBlockActionButtons(block.id, blockIdx, totalBlocks)}
               </div>
             </div>
 
-            {/* The Table itself with dynamic configurable font */}
+            {/* The Table itself with dynamic configurable font, spacing and alignment */}
             <table
               className={`w-full border-collapse ${bordered ? 'border border-stone-300' : ''}`}
               style={{
@@ -710,37 +1447,64 @@ export const DocumentPaper: React.FC<DocumentPaperProps> = ({
                 {cells.map((row, rIdx) => (
                   <tr key={`r_${rIdx}`} className={rIdx === 0 && headers ? 'font-semibold bg-stone-50/70' : ''}>
                     {row.map((cell, cIdx) => (
-                      <td
+                      <EditableBlock
                         key={cell.id}
+                        tagName="td"
+                        dataAttrName="data-cell-id"
+                        blockId={`${block.id}_${cell.id}`}
+                        parentBlockId={block.id}
+                        content={cell.content}
+                        onFocus={() => onSelectBlock(block.id, pageId)}
+                        onChange={(html) => {
+                          onUpdateBlock(block.id, (prev) => {
+                            const prevTable = prev.tableData || tableData;
+                            const newCells = prevTable.cells.map((r, ri) =>
+                              r.map((c, ci) =>
+                                ri === rIdx && ci === cIdx ? { ...c, content: html } : c
+                              )
+                            );
+                            return {
+                              tableData: { ...prevTable, cells: newCells },
+                            };
+                          });
+                        }}
+                        onBlur={(html) => {
+                          onUpdateBlock(block.id, (prev) => {
+                            const prevTable = prev.tableData || tableData;
+                            const existing = prevTable.cells[rIdx]?.[cIdx];
+                            if (existing && existing.content === html) return {};
+                            const newCells = prevTable.cells.map((r, ri) =>
+                              r.map((c, ci) =>
+                                ri === rIdx && ci === cIdx ? { ...c, content: html } : c
+                              )
+                            );
+                            return {
+                              tableData: { ...prevTable, cells: newCells },
+                            };
+                          });
+                        }}
                         style={{
                           backgroundColor: cell.background,
-                          color: cell.textColor || doc.primaryColor,
-                          textAlign: cell.align || 'center',
+                          color: cell.textColor || block.color || doc.primaryColor,
+                          textAlign:
+                            cell.align ||
+                            (block.textAlign === 'justify' ? 'left' : block.textAlign) ||
+                            'center',
                           fontFamily: cell.fontFamily || tableFontFamily,
                           fontSize: `${cell.fontSize || tableFontSize}px`,
-                          lineHeight: 1.4,
+                          lineHeight: block.lineHeight ?? 1.4,
+                          letterSpacing:
+                            block.letterSpacing !== undefined
+                              ? `${block.letterSpacing}em`
+                              : undefined,
+                          fontWeight:
+                            block.fontWeight || (rIdx === 0 && headers ? '600' : 'normal'),
+                          fontStyle: block.fontStyle || 'normal',
                         }}
                         className={`${compact ? 'p-1.5' : 'p-2.5 sm:p-3'} outline-none transition-colors ${
                           bordered ? 'border border-stone-200' : ''
-                        }`}
-                        contentEditable
-                        suppressContentEditableWarning
-                        onBlur={(e) => {
-                          const newCells = cells.map((r, ri) =>
-                            r.map((c, ci) => {
-                              if (ri === rIdx && ci === cIdx) {
-                                return { ...c, content: e.currentTarget.innerText };
-                              }
-                              return c;
-                            })
-                          );
-                          onUpdateBlock(block.id, {
-                            tableData: { ...block.tableData!, cells: newCells },
-                          });
-                        }}
-                      >
-                        {cell.content}
-                      </td>
+                        } ${block.hasEmphasisDots ? 'cjk-emphasis-dot' : ''}`}
+                      />
                     ))}
                   </tr>
                 ))}
@@ -903,6 +1667,8 @@ export const DocumentPaper: React.FC<DocumentPaperProps> = ({
                 <Settings2 className="w-3 h-3 text-amber-700" />
                 <span>Modifica</span>
               </button>
+
+              {renderBlockActionButtons(block.id, blockIdx, totalBlocks)}
             </div>
           </div>
         );
@@ -947,18 +1713,23 @@ export const DocumentPaper: React.FC<DocumentPaperProps> = ({
         );
 
         const renderTextArea = (extraClass = '') => (
-          <div
-            contentEditable
-            suppressContentEditableWarning
-            data-placeholder="Scrivi qui il testo che avvolge l'immagine..."
-            onFocus={() => onSelectBlock(block.id)}
-            onBlur={(e) => {
-              onUpdateBlock(block.id, { content: e.currentTarget.innerHTML });
-            }}
-            dangerouslySetInnerHTML={{ __html: blockText }}
+          <EditableBlock
+            blockId={block.id}
+            content={blockText}
+            placeholder="Scrivi qui il testo che avvolge l'immagine..."
+            onFocus={() => onSelectBlock(block.id, pageId)}
+            onChange={(html) => onUpdateBlock(block.id, { content: html })}
+            onBlur={(html) => onUpdateBlock(block.id, { content: html })}
             style={{
-              ...commonStyle,
+              fontFamily: blockFont,
+              fontSize: `${blockFontSize}px`,
+              color: blockColor,
+              textAlign: blockAlign,
               lineHeight: effectiveLineHeight,
+              letterSpacing: `${block.letterSpacing ?? 0.04}em`,
+              fontWeight: block.fontWeight || 'normal',
+              fontStyle: block.fontStyle || 'normal',
+              writingMode: 'horizontal-tb',
               display: 'block', // Crucial for CSS float wrapping!
             }}
             className={`outline-none py-1 transition-all min-h-[4em] whitespace-pre-wrap ${
@@ -1060,13 +1831,42 @@ export const DocumentPaper: React.FC<DocumentPaperProps> = ({
       {/* Pages Container */}
       {doc.pages.map((page, pageIdx) => {
         const pageElId = `cjk_page_${page.id}`;
+        const isPageActive = activePageId === page.id || page.blocks.some((b) => b.id === activeBlockId);
+
+        const handlePageAreaClick = (e: React.MouseEvent<HTMLDivElement>) => {
+          const target = e.target as HTMLElement | null;
+          const isPageCanvas =
+            e.target === e.currentTarget || !!target?.hasAttribute('data-page-flow-canvas');
+          if (!isPageCanvas) return;
+
+          e.stopPropagation();
+          onSelectPage?.(page.id);
+          const lastTextBlock = [...page.blocks]
+            .reverse()
+            .find(
+              (b) =>
+                b.type === 'paragraph' ||
+                b.type === 'poem-stanza' ||
+                b.type === 'heading1' ||
+                b.type === 'heading2'
+            );
+          const lastBlock = page.blocks[page.blocks.length - 1];
+          if (lastTextBlock && lastTextBlock.id === lastBlock?.id) {
+            onSelectBlock(lastTextBlock.id, page.id);
+            focusBlockElement(lastTextBlock.id);
+          } else {
+            onAddBlockOnPage?.(page.id, 'paragraph');
+          }
+        };
+
         return (
           <div
             key={page.id}
-            className="w-full flex justify-center overflow-x-auto pb-4"
+            className="print-page-wrapper w-full flex justify-center overflow-x-auto pb-4"
           >
             <div
               id={pageElId}
+              onClick={() => onSelectPage?.(page.id)}
               style={{
                 width: `${pageDim.width}px`,
                 maxWidth: `${pageDim.width}px`,
@@ -1075,7 +1875,11 @@ export const DocumentPaper: React.FC<DocumentPaperProps> = ({
                 padding: `${doc.marginMm}mm`,
                 boxSizing: 'border-box',
               }}
-              className="print-page shadow-xl border border-stone-200/80 transition-all relative flex flex-col justify-between shrink-0"
+              className={`print-page shadow-xl border transition-all relative flex flex-col justify-between shrink-0 ${
+                doc.pages.length > 1 && isPageActive
+                  ? 'border-amber-600/60 ring-2 ring-amber-500/20'
+                  : 'border-stone-200/80'
+              }`}
             >
               {/* Margin Visual Guide Rectangle (active when settings panel is open) */}
               {showMarginGuides && (
@@ -1110,7 +1914,10 @@ export const DocumentPaper: React.FC<DocumentPaperProps> = ({
               )}
 
               {/* Main Content Area & Synced Grid Pattern */}
-              <div className="relative flex-1 w-full min-h-[500px]">
+              <div
+                className="relative flex-1 w-full min-h-[500px] flex flex-col"
+                onClick={handlePageAreaClick}
+              >
                 {/* Grid / Ruled Lines Overlay strictly bounded within the content container */}
                 {getPatternClass() && (
                   <div
@@ -1144,94 +1951,66 @@ export const DocumentPaper: React.FC<DocumentPaperProps> = ({
                   />
                 )}
 
-                {/* Blocks Container */}
+                {/* Blocks Container (Never use dir=rtl on vertical-rl, CSS handles right-to-left columns natively!) */}
                 <div
-                  dir={isVertical ? 'rtl' : 'ltr'}
-                  className={`relative z-10 w-full h-full ${
+                  dir="ltr"
+                  data-page-flow-canvas="true"
+                  className={`relative z-10 w-full flex-1 ${
                     isVertical
-                      ? 'vertical-writing-upright overflow-x-auto'
+                      ? 'vertical-writing-upright'
                       : 'horizontal-writing'
                   }`}
                 >
-                  {page.blocks.map((block) => {
+                  {page.blocks.map((block, bIdx) => {
                     const isActive = activeBlockId === block.id;
                     const spec = PAPER_GRID_SPECS[doc.paperStyle];
                     const isGrid = spec && spec.type !== 'plain';
+                    const isHorizontalInsetBlock =
+                      block.type === 'table' ||
+                      block.type === 'list' ||
+                      block.type === 'seal-group' ||
+                      block.type === 'image';
+                    const hasBuiltInHeaderActions =
+                      block.type === 'table' ||
+                      block.type === 'list' ||
+                      (block.type === 'image' && !!block.imageData?.url);
 
                     return (
                       <div
                         key={block.id}
-                        onClick={() => onSelectBlock(block.id)}
-                        className={`relative group transition-all ${
-                          isActive
-                            ? 'bg-amber-500/10'
-                            : 'hover:bg-stone-500/5'
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onSelectBlock(block.id, page.id);
+                        }}
+                        style={
+                          isVertical && isHorizontalInsetBlock
+                            ? { writingMode: 'horizontal-tb' }
+                            : undefined
+                        }
+                        className={`relative transition-all ${
+                          isActive ? 'bg-amber-500/5 ring-1 ring-amber-400/40 rounded-xs' : ''
                         } ${
                           isGrid
-                            ? isVertical
+                            ? isVertical && !isHorizontalInsetBlock
                               ? 'inline-block align-top m-0 p-0'
                               : 'block m-0 p-0'
-                            : isVertical
+                            : isVertical && !isHorizontalInsetBlock
                             ? 'inline-block align-top my-0 px-0'
                             : 'my-1 py-0.5'
                         }`}
                       >
-                        {/* Floating Actions: visible on hover OR when block is active */}
-                        <div
-                          className={`no-print absolute z-30 flex items-center gap-1 p-1 bg-stone-900/95 text-white rounded-lg shadow-lg backdrop-blur-xs text-xs transition-opacity ${
-                            isActive
-                              ? 'opacity-100 ring-2 ring-amber-500/60'
-                              : 'opacity-0 group-hover:opacity-100'
-                          } ${isVertical ? 'top-0 -left-10 flex-col' : '-top-8 right-2'}`}
-                        >
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              onMoveBlock(block.id, 'up');
-                            }}
-                            className="p-1 hover:bg-stone-700 rounded transition-colors"
-                            title="Sposta prima"
+                        {/* Active-only compact Block Action Menu (Move / Duplicate / Delete — no hover flash, no +Testo) */}
+                        {isActive && !hasBuiltInHeaderActions && (
+                          <div
+                            className="no-print absolute -top-7 right-0 z-30"
+                            style={{ writingMode: 'horizontal-tb' }}
                           >
-                            <ChevronUp className="w-3.5 h-3.5" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              onMoveBlock(block.id, 'down');
-                            }}
-                            className="p-1 hover:bg-stone-700 rounded transition-colors"
-                            title="Sposta dopo"
-                          >
-                            <ChevronDown className="w-3.5 h-3.5" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              onDuplicateBlock(block.id);
-                            }}
-                            className="p-1 hover:bg-stone-700 rounded transition-colors"
-                            title="Duplica"
-                          >
-                            <Copy className="w-3.5 h-3.5" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              onDeleteBlock(block.id);
-                            }}
-                            className="p-1 hover:bg-red-700 rounded text-red-300 hover:text-white transition-colors"
-                            title="Elimina blocco"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
+                            {renderBlockActionButtons(block.id, bIdx, page.blocks.length)}
+                          </div>
+                        )}
 
                         {/* Block Content */}
-                        {renderBlockContent(block)}
+                        {renderBlockContent(block, page.id, bIdx, page.blocks.length)}
                       </div>
                     );
                   })}

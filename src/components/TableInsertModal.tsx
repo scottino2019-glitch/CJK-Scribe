@@ -108,7 +108,7 @@ export const TableInsertModal: React.FC<TableInsertModalProps> = ({
 
           <div>
             <label className="block text-xs font-semibold text-stone-700 mb-1">
-              Dimensione Font Tabella ({fontSize}pt)
+              Dimensione Font Tabella ({fontSize}px)
             </label>
             <div className="grid grid-cols-5 gap-1.5">
               {[12, 14, 16, 18, 22].map((sz) => (
@@ -122,7 +122,7 @@ export const TableInsertModal: React.FC<TableInsertModalProps> = ({
                       : 'bg-stone-50 text-stone-700 border-stone-200 hover:bg-stone-100'
                   }`}
                 >
-                  {sz}pt
+                  {sz}px
                 </button>
               ))}
             </div>

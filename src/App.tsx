@@ -39,6 +39,12 @@ import {
   getPaperBaseColorHex,
   PAPER_GRID_SPECS,
 } from './utils/gridAlignment';
+import {
+  subscribeSelectionStyle,
+  SelectionStyleState,
+  stripInlineStyleFromHtml,
+  insertTextAtSelection,
+} from './utils/textFormatting';
 import { SlidersHorizontal, Eye, Save, RotateCcw, HelpCircle, Sparkles } from 'lucide-react';
 
 const STORAGE_KEY = 'cjk_scribe_saved_doc';
@@ -66,10 +72,21 @@ export default function App() {
   });
 
   const [activeBlockId, setActiveBlockId] = useState<string | null>('blk_title');
+  const [activePageId, setActivePageId] = useState<string | null>(null);
+  const [addBlockTargetPageId, setAddBlockTargetPageId] = useState<string | null>(null);
+  const [selectionStyle, setSelectionStyle] = useState<SelectionStyleState | null>(null);
 
   // History Stacks for Undo & Redo
   const [history, setHistory] = useState<CJKDocument[]>([]);
   const [future, setFuture] = useState<CJKDocument[]>([]);
+
+  // Subscribe to selection style changes inside editable blocks
+  useEffect(() => {
+    const unsub = subscribeSelectionStyle((st) => {
+      setSelectionStyle(st);
+    });
+    return unsub;
+  }, []);
 
   // Modals state
   const [isSpecialCharsOpen, setIsSpecialCharsOpen] = useState(false);
@@ -83,6 +100,18 @@ export default function App() {
   const [isHelpOpen, setIsHelpOpen] = useState(false);
   const [isClearSheetModalOpen, setIsClearSheetModalOpen] = useState(false);
 
+  const focusBlockById = (blockId: string, scrollIntoView = false) => {
+    setTimeout(() => {
+      const el = document.querySelector(`[data-block-id="${blockId}"]`) as HTMLElement | null;
+      if (el) {
+        if (scrollIntoView) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+        el.focus();
+      }
+    }, 50);
+  };
+
   // Helper to update doc while preserving undo history
   const updateDoc = (
     updater: (prev: CJKDocument) => CJKDocument,
@@ -90,6 +119,7 @@ export default function App() {
   ) => {
     setDoc((prev) => {
       const next = updater(prev);
+      if (next === prev) return prev;
       if (recordHistory) {
         setHistory((h) => [...h.slice(-30), prev]);
         setFuture([]);
@@ -185,14 +215,26 @@ export default function App() {
 
   const activeBlock = getActiveBlock();
 
-  // Block updates
-  const handleUpdateBlock = (blockId: string, updates: Partial<DocumentBlock>) => {
+  // Block updates (supports partial object or functional updater to avoid stale closures across cells/items)
+  const handleUpdateBlock = (
+    blockId: string,
+    updates:
+      | Partial<DocumentBlock>
+      | ((prevBlock: DocumentBlock) => Partial<DocumentBlock>)
+  ) => {
     updateDoc((prev) => {
+      let changed = false;
       const newPages = prev.pages.map((page) => ({
         ...page,
-        blocks: page.blocks.map((b) => (b.id === blockId ? { ...b, ...updates } : b)),
+        blocks: page.blocks.map((b) => {
+          if (b.id !== blockId) return b;
+          const resolved = typeof updates === 'function' ? updates(b) : updates;
+          if (!resolved || Object.keys(resolved).length === 0) return b;
+          changed = true;
+          return { ...b, ...resolved };
+        }),
       }));
-      return { ...prev, pages: newPages };
+      return changed ? { ...prev, pages: newPages } : prev;
     });
   };
 
@@ -266,14 +308,15 @@ export default function App() {
 
   // Block duplicate
   const handleDuplicateBlock = (blockId: string) => {
-    setDoc((prev) => {
+    const newId = `blk_${Date.now()}`;
+    updateDoc((prev) => {
       const newPages = prev.pages.map((page) => {
         const idx = page.blocks.findIndex((b) => b.id === blockId);
         if (idx === -1) return page;
         const target = page.blocks[idx];
         const clone: DocumentBlock = {
-          ...target,
-          id: `blk_${Date.now()}`,
+          ...JSON.parse(JSON.stringify(target)),
+          id: newId,
         };
         const newBlocks = [...page.blocks];
         newBlocks.splice(idx + 1, 0, clone);
@@ -281,17 +324,55 @@ export default function App() {
       });
       return { ...prev, pages: newPages };
     });
+    setActiveBlockId(newId);
   };
 
-  // Add block
-  const handleAddBlock = (type: BlockType, afterBlockId?: string) => {
+  // Resolve target page index for block insertions
+  const resolveTargetPageIndex = (
+    pages: CJKDocument['pages'],
+    afterBlockId?: string,
+    explicitPageId?: string | null
+  ): number => {
+    if (afterBlockId) {
+      const pIdx = pages.findIndex((p) => p.blocks.some((b) => b.id === afterBlockId));
+      if (pIdx !== -1) return pIdx;
+    }
+    if (explicitPageId) {
+      const pIdx = pages.findIndex((p) => p.id === explicitPageId);
+      if (pIdx !== -1) return pIdx;
+    }
+    if (activeBlockId) {
+      const pIdx = pages.findIndex((p) => p.blocks.some((b) => b.id === activeBlockId));
+      if (pIdx !== -1) return pIdx;
+    }
+    if (activePageId) {
+      const pIdx = pages.findIndex((p) => p.id === activePageId);
+      if (pIdx !== -1) return pIdx;
+    }
+    return 0;
+  };
+
+  // Add block (inserts right after afterBlockId or activeBlockId on the active page, or at end of explicitPageId)
+  const handleAddBlock = (
+    type: BlockType,
+    afterBlockId?: string,
+    explicitPageId?: string | null,
+    listStyleOverride?: ListNumberingType
+  ) => {
+    const newBlockId = `blk_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
     const newBlock: DocumentBlock = {
-      id: `blk_${Date.now()}`,
+      id: newBlockId,
       type,
       content: '', // Clean and empty by default
       fontFamily: doc.defaultFontFamily,
       fontSize:
-        type === 'heading1' ? 32 : type === 'heading2' ? 20 : doc.defaultFontSize,
+        type === 'heading1'
+          ? Math.round(doc.defaultFontSize * 1.5)
+          : type === 'heading2'
+          ? Math.round(doc.defaultFontSize * 1.15)
+          : type === 'list'
+          ? Math.min(doc.defaultFontSize || 16, 22)
+          : doc.defaultFontSize,
       color: doc.primaryColor,
       textAlign: 'left',
     };
@@ -312,11 +393,10 @@ export default function App() {
     }
 
     if (type === 'list') {
+      newBlock.lineHeight = 1.6;
       newBlock.listData = {
-        style: 'chinese-num',
-        items: [
-          { id: `li_1_${Date.now()}`, text: '' },
-        ],
+        style: listStyleOverride || getDefaultListStyle(doc),
+        items: [{ id: `li_1_${Date.now()}`, text: '' }],
       };
     }
 
@@ -333,33 +413,48 @@ export default function App() {
       };
     }
 
-    setDoc((prev) => {
-      const newPages = [...prev.pages];
-      const targetPage = newPages[0];
+    let insertedPageId = activePageId;
+    updateDoc((prev) => {
+      const targetIdx = resolveTargetPageIndex(prev.pages, afterBlockId, explicitPageId);
+      const targetPage = prev.pages[targetIdx];
       if (!targetPage) return prev;
+      insertedPageId = targetPage.id;
 
-      if (afterBlockId) {
-        const idx = targetPage.blocks.findIndex((b) => b.id === afterBlockId);
+      const updatedBlocks = [...targetPage.blocks];
+      const anchorId = afterBlockId || (!explicitPageId ? activeBlockId : undefined);
+      if (anchorId) {
+        const idx = updatedBlocks.findIndex((b) => b.id === anchorId);
         if (idx !== -1) {
-          targetPage.blocks.splice(idx + 1, 0, newBlock);
+          updatedBlocks.splice(idx + 1, 0, newBlock);
         } else {
-          targetPage.blocks.push(newBlock);
+          updatedBlocks.push(newBlock);
         }
       } else {
-        targetPage.blocks.push(newBlock);
+        updatedBlocks.push(newBlock);
       }
 
+      const newPages = prev.pages.map((p, i) =>
+        i === targetIdx ? { ...p, blocks: updatedBlocks } : p
+      );
       return { ...prev, pages: newPages };
     });
 
-    setActiveBlockId(newBlock.id);
+    setActiveBlockId(newBlockId);
+    if (insertedPageId) setActivePageId(insertedPageId);
 
     // If new block is image, open the configuration modal right away for smooth UX
     if (type === 'image') {
-      setImageModalBlockId(newBlock.id);
+      setImageModalBlockId(newBlockId);
       setImageModalInitialData(newBlock.imageData);
       setImageModalInitialContent(newBlock.content);
       setIsImageModalOpen(true);
+    } else if (
+      type === 'paragraph' ||
+      type === 'heading1' ||
+      type === 'heading2' ||
+      type === 'poem-stanza'
+    ) {
+      focusBlockById(newBlockId, true);
     }
   };
 
@@ -425,19 +520,23 @@ export default function App() {
 
   // Add Page
   const handleAddPage = () => {
-    setDoc((prev) => {
+    const ts = Date.now();
+    const newPageId = `page_${ts}`;
+    const newBlockId = `blk_${ts}_p`;
+    updateDoc((prev) => {
       const newPageNumber = prev.pages.length + 1;
       const newPage = {
-        id: `page_${Date.now()}`,
+        id: newPageId,
         pageNumber: newPageNumber,
         blocks: [
           {
-            id: `blk_p${newPageNumber}_1`,
+            id: newBlockId,
             type: 'paragraph' as BlockType,
-            content: '第二页正文... (Testo pagina ' + newPageNumber + ')',
+            content: '',
             fontFamily: prev.defaultFontFamily,
             fontSize: prev.defaultFontSize,
             color: prev.primaryColor,
+            textAlign: 'left' as const,
           },
         ],
       };
@@ -446,15 +545,23 @@ export default function App() {
         pages: [...prev.pages, newPage],
       };
     });
+    setActivePageId(newPageId);
+    setActiveBlockId(newBlockId);
+    focusBlockById(newBlockId, true);
   };
 
   // Delete Page
   const handleDeletePage = (pageIdx: number) => {
     if (doc.pages.length <= 1) return;
-    setDoc((prev) => {
+    updateDoc((prev) => {
       const newPages = prev.pages.filter((_, idx) => idx !== pageIdx);
       return { ...prev, pages: newPages };
     });
+    const fallbackPage = doc.pages[Math.max(0, pageIdx - 1)];
+    if (fallbackPage) {
+      setActivePageId(fallbackPage.id);
+      setActiveBlockId(fallbackPage.blocks[0]?.id || null);
+    }
   };
 
   const handleWritingModeChange = (mode: WritingMode) => {
@@ -495,14 +602,49 @@ export default function App() {
 
   const handleFontFamilyChange = (fontCss: string) => {
     if (activeBlockId) {
-      if (activeBlock?.type === 'table' && activeBlock.tableData) {
-        handleUpdateBlock(activeBlockId, {
-          fontFamily: fontCss,
-          tableData: { ...activeBlock.tableData, fontFamily: fontCss },
-        });
-      } else {
-        handleUpdateBlock(activeBlockId, { fontFamily: fontCss });
-      }
+      updateDoc((prev) => ({
+        ...prev,
+        pages: prev.pages.map((p) => ({
+          ...p,
+          blocks: p.blocks.map((b) => {
+            if (b.id !== activeBlockId) return b;
+            const cleanedContent = stripInlineStyleFromHtml(b.content, 'fontFamily');
+            if (b.type === 'table' && b.tableData) {
+              return {
+                ...b,
+                content: cleanedContent,
+                fontFamily: fontCss,
+                tableData: {
+                  ...b.tableData,
+                  fontFamily: fontCss,
+                  cells: b.tableData.cells.map((row) =>
+                    row.map((c) => ({
+                      ...c,
+                      fontFamily: undefined,
+                      content: stripInlineStyleFromHtml(c.content, 'fontFamily'),
+                    }))
+                  ),
+                },
+              };
+            }
+            if (b.type === 'list' && b.listData) {
+              return {
+                ...b,
+                content: cleanedContent,
+                fontFamily: fontCss,
+                listData: {
+                  ...b.listData,
+                  items: b.listData.items.map((it) => ({
+                    ...it,
+                    text: stripInlineStyleFromHtml(it.text, 'fontFamily'),
+                  })),
+                },
+              };
+            }
+            return { ...b, content: cleanedContent, fontFamily: fontCss };
+          }),
+        })),
+      }));
     } else {
       updateDoc((prev) => ({ ...prev, defaultFontFamily: fontCss }));
     }
@@ -517,15 +659,47 @@ export default function App() {
           ...prev,
           pages: prev.pages.map((p) => ({
             ...p,
-            blocks: p.blocks.map((b) =>
-              b.id === activeBlockId
-                ? {
-                    ...b,
+            blocks: p.blocks.map((b) => {
+              if (b.id !== activeBlockId) return b;
+              const cleanedContent = stripInlineStyleFromHtml(b.content, 'fontSize');
+              if (b.type === 'table' && b.tableData) {
+                return {
+                  ...b,
+                  content: cleanedContent,
+                  fontSize: boundedSize,
+                  tableData: {
+                    ...b.tableData,
                     fontSize: boundedSize,
-                    tableData: b.tableData ? { ...b.tableData, fontSize: boundedSize } : undefined,
-                  }
-                : b
-            ),
+                    cells: b.tableData.cells.map((row) =>
+                      row.map((c) => ({
+                        ...c,
+                        fontSize: undefined,
+                        content: stripInlineStyleFromHtml(c.content, 'fontSize'),
+                      }))
+                    ),
+                  },
+                };
+              }
+              if (b.type === 'list' && b.listData) {
+                return {
+                  ...b,
+                  content: cleanedContent,
+                  fontSize: boundedSize,
+                  listData: {
+                    ...b.listData,
+                    items: b.listData.items.map((it) => ({
+                      ...it,
+                      text: stripInlineStyleFromHtml(it.text, 'fontSize'),
+                    })),
+                  },
+                };
+              }
+              return {
+                ...b,
+                content: cleanedContent,
+                fontSize: boundedSize,
+              };
+            }),
           })),
         };
       } else {
@@ -536,12 +710,37 @@ export default function App() {
           pages: prev.pages.map((p) => ({
             ...p,
             blocks: p.blocks.map((b) => {
-              const cur = b.fontSize || prev.defaultFontSize;
+              const cur =
+                b.type === 'table'
+                  ? b.fontSize || b.tableData?.fontSize || prev.defaultFontSize
+                  : b.fontSize || prev.defaultFontSize;
               const next = Math.max(10, Math.min(72, cur + delta));
               return {
                 ...b,
+                content: stripInlineStyleFromHtml(b.content, 'fontSize'),
                 fontSize: next,
-                tableData: b.tableData ? { ...b.tableData, fontSize: next } : undefined,
+                tableData: b.tableData
+                  ? {
+                      ...b.tableData,
+                      fontSize: next,
+                      cells: b.tableData.cells.map((row) =>
+                        row.map((c) => ({
+                          ...c,
+                          fontSize: undefined,
+                          content: stripInlineStyleFromHtml(c.content, 'fontSize'),
+                        }))
+                      ),
+                    }
+                  : undefined,
+                listData: b.listData
+                  ? {
+                      ...b.listData,
+                      items: b.listData.items.map((it) => ({
+                        ...it,
+                        text: stripInlineStyleFromHtml(it.text, 'fontSize'),
+                      })),
+                    }
+                  : undefined,
               };
             }),
           })),
@@ -552,20 +751,85 @@ export default function App() {
 
   const handleColorChange = (color: string) => {
     if (activeBlockId) {
-      handleUpdateBlock(activeBlockId, { color });
+      updateDoc((prev) => ({
+        ...prev,
+        pages: prev.pages.map((p) => ({
+          ...p,
+          blocks: p.blocks.map((b) => {
+            if (b.id !== activeBlockId) return b;
+            const cleanedContent = stripInlineStyleFromHtml(b.content, 'color');
+            if (b.type === 'table' && b.tableData) {
+              return {
+                ...b,
+                content: cleanedContent,
+                color,
+                tableData: {
+                  ...b.tableData,
+                  cells: b.tableData.cells.map((row) =>
+                    row.map((c) => ({
+                      ...c,
+                      textColor: undefined,
+                      content: stripInlineStyleFromHtml(c.content, 'color'),
+                    }))
+                  ),
+                },
+              };
+            }
+            if (b.type === 'list' && b.listData) {
+              return {
+                ...b,
+                content: cleanedContent,
+                color,
+                listData: {
+                  ...b.listData,
+                  items: b.listData.items.map((it) => ({
+                    ...it,
+                    text: stripInlineStyleFromHtml(it.text, 'color'),
+                  })),
+                },
+              };
+            }
+            return {
+              ...b,
+              content: cleanedContent,
+              color,
+            };
+          }),
+        })),
+      }));
     } else {
-      setDoc((prev) => ({ ...prev, primaryColor: color }));
+      updateDoc((prev) => ({ ...prev, primaryColor: color }));
     }
   };
 
   const handleTextAlignChange = (align: 'left' | 'center' | 'right' | 'justify') => {
+    const applyAlignToBlock = (b: DocumentBlock): DocumentBlock => {
+      if (b.type === 'table' && b.tableData) {
+        const cellAlign: 'left' | 'center' | 'right' =
+          align === 'justify' ? 'left' : align;
+        return {
+          ...b,
+          textAlign: align,
+          tableData: {
+            ...b.tableData,
+            cells: b.tableData.cells.map((row) =>
+              row.map((c) => ({ ...c, align: cellAlign }))
+            ),
+          },
+        };
+      }
+      return { ...b, textAlign: align };
+    };
+
     updateDoc((prev) => {
       if (activeBlockId) {
         return {
           ...prev,
           pages: prev.pages.map((p) => ({
             ...p,
-            blocks: p.blocks.map((b) => (b.id === activeBlockId ? { ...b, textAlign: align } : b)),
+            blocks: p.blocks.map((b) =>
+              b.id === activeBlockId ? applyAlignToBlock(b) : b
+            ),
           })),
         };
       } else {
@@ -573,7 +837,7 @@ export default function App() {
           ...prev,
           pages: prev.pages.map((p) => ({
             ...p,
-            blocks: p.blocks.map((b) => ({ ...b, textAlign: align })),
+            blocks: p.blocks.map(applyAlignToBlock),
           })),
         };
       }
@@ -649,12 +913,12 @@ export default function App() {
     rubyHtml: string,
     action: RubyTargetAction = 'replace'
   ) => {
-    // Determine target block: explicit active block, or first block of first page
-    const targetId = activeBlockId || doc.pages[0]?.blocks[0]?.id;
+    const targetIdx = resolveTargetPageIndex(doc.pages);
+    const targetPage = doc.pages[targetIdx];
+    const targetId = activeBlockId || targetPage?.blocks[0]?.id;
     const targetBlock = doc.pages.flatMap((p) => p.blocks).find((b) => b.id === targetId);
 
     if (action === 'new-block' || !targetBlock) {
-      // Create a dedicated paragraph block for the ruby text
       const newBlock: DocumentBlock = {
         id: `blk_${Date.now()}`,
         type: 'paragraph',
@@ -665,10 +929,21 @@ export default function App() {
         textAlign: 'center',
         lineHeight: 2.2,
       };
-      setDoc((prev) => {
-        const newPages = [...prev.pages];
-        newPages[0]?.blocks.push(newBlock);
-        return { ...prev, pages: newPages };
+      updateDoc((prev) => {
+        const pIdx = resolveTargetPageIndex(prev.pages);
+        const page = prev.pages[pIdx];
+        if (!page) return prev;
+        const blocks = [...page.blocks];
+        const aIdx = activeBlockId ? blocks.findIndex((b) => b.id === activeBlockId) : -1;
+        if (aIdx !== -1) {
+          blocks.splice(aIdx + 1, 0, newBlock);
+        } else {
+          blocks.push(newBlock);
+        }
+        return {
+          ...prev,
+          pages: prev.pages.map((p, i) => (i === pIdx ? { ...p, blocks } : p)),
+        };
       });
       setActiveBlockId(newBlock.id);
     } else if (action === 'append') {
@@ -679,7 +954,6 @@ export default function App() {
       });
       setActiveBlockId(targetBlock.id);
     } else {
-      // 'replace': directly replace the selected block content with the ruby-annotated sentence
       handleUpdateBlock(targetBlock.id, {
         content: rubyHtml,
         lineHeight: Math.max(targetBlock.lineHeight || 2.2, 2.2),
@@ -707,18 +981,29 @@ export default function App() {
         handleUpdateBlock(editingSeal.blockId, { seals: updated });
       }
     } else {
-      // Add a seal block
       const sealBlock: DocumentBlock = {
         id: `blk_seal_${Date.now()}`,
         type: 'seal-group',
         content: '',
         seals: [newSeal],
       };
-      setDoc((prev) => {
-        const newPages = [...prev.pages];
-        newPages[0]?.blocks.push(sealBlock);
-        return { ...prev, pages: newPages };
+      updateDoc((prev) => {
+        const pIdx = resolveTargetPageIndex(prev.pages);
+        const page = prev.pages[pIdx];
+        if (!page) return prev;
+        const blocks = [...page.blocks];
+        const aIdx = activeBlockId ? blocks.findIndex((b) => b.id === activeBlockId) : -1;
+        if (aIdx !== -1) {
+          blocks.splice(aIdx + 1, 0, sealBlock);
+        } else {
+          blocks.push(sealBlock);
+        }
+        return {
+          ...prev,
+          pages: prev.pages.map((p, i) => (i === pIdx ? { ...p, blocks } : p)),
+        };
       });
+      setActiveBlockId(sealBlock.id);
     }
     setEditingSeal(null);
   };
@@ -737,15 +1022,33 @@ export default function App() {
       },
     };
     updateDoc((prev) => {
-      const newPages = [...prev.pages];
-      newPages[0]?.blocks.push(tableBlock);
-      return { ...prev, pages: newPages };
+      const pIdx = resolveTargetPageIndex(prev.pages);
+      const page = prev.pages[pIdx];
+      if (!page) return prev;
+      const blocks = [...page.blocks];
+      const aIdx = activeBlockId ? blocks.findIndex((b) => b.id === activeBlockId) : -1;
+      if (aIdx !== -1) {
+        blocks.splice(aIdx + 1, 0, tableBlock);
+      } else {
+        blocks.push(tableBlock);
+      }
+      return {
+        ...prev,
+        pages: prev.pages.map((p, i) => (i === pIdx ? { ...p, blocks } : p)),
+      };
     });
     setActiveBlockId(tableBlock.id);
   };
 
   // Special character click
   const handleInsertChar = (char: string) => {
+    const inserted = insertTextAtSelection(char, activeBlockId);
+    if (inserted) {
+      if (!inserted.isCell && inserted.blockId) {
+        handleUpdateBlock(inserted.blockId, { content: inserted.newHtml });
+      }
+      return;
+    }
     if (activeBlockId && activeBlock) {
       handleUpdateBlock(activeBlockId, {
         content: `${activeBlock.content}${char}`,
@@ -820,13 +1123,45 @@ export default function App() {
     }
   };
 
+  const isGridPaperActive =
+    doc.paperStyle !== 'plain' &&
+    doc.paperStyle !== 'xuan' &&
+    doc.paperStyle !== 'hanji';
+
+  const effectiveActiveFontSize =
+    activeBlock?.type === 'table'
+      ? activeBlock.fontSize ||
+        activeBlock.tableData?.fontSize ||
+        doc.defaultFontSize ||
+        16
+      : activeBlock?.type === 'list'
+      ? activeBlock.fontSize || Math.min(doc.defaultFontSize || 16, 22)
+      : activeBlock?.fontSize ||
+        (isGridPaperActive
+          ? doc.defaultFontSize
+          : activeBlock?.type === 'heading1'
+          ? Math.round(doc.defaultFontSize * 1.5)
+          : activeBlock?.type === 'heading2'
+          ? Math.round(doc.defaultFontSize * 1.15)
+          : doc.defaultFontSize);
+
+  const effectiveActiveFontFamily =
+    activeBlock?.type === 'table'
+      ? activeBlock.fontFamily ||
+        activeBlock.tableData?.fontFamily ||
+        doc.defaultFontFamily
+      : activeBlock?.fontFamily || doc.defaultFontFamily;
+
   return (
-    <div className="min-h-screen flex flex-col bg-stone-100 text-stone-900 font-sans selection:bg-amber-200">
+    <div className="app-shell min-h-screen flex flex-col bg-stone-100 text-stone-900 font-sans selection:bg-amber-200">
       {/* Top Bar honoring 3-zone contract */}
       <TopNav
         onOpenTemplates={() => setIsTemplatesOpen(true)}
         onToggleSpecialChars={() => setIsSpecialCharsOpen((prev) => !prev)}
-        onOpenAddMenu={() => setIsAddBlockOpen(true)}
+        onOpenAddMenu={() => {
+          setAddBlockTargetPageId(null);
+          setIsAddBlockOpen(true);
+        }}
         onPrintPdf={handlePrintPdf}
         onDownloadDirectPdf={handleDownloadDirectPdf}
         isExporting={isExporting}
@@ -852,9 +1187,9 @@ export default function App() {
         onGridOpacityChange={(opacity) => updateDoc((prev) => ({ ...prev, gridOpacity: opacity }))}
         paperFormat={doc.paperFormat}
         onPaperFormatChange={handlePaperFormatChange}
-        activeFontFamily={activeBlock?.fontFamily || doc.defaultFontFamily}
+        activeFontFamily={effectiveActiveFontFamily}
         onFontFamilyChange={handleFontFamilyChange}
-        activeFontSize={activeBlock?.fontSize || doc.defaultFontSize}
+        activeFontSize={effectiveActiveFontSize}
         onFontSizeChange={handleFontSizeChange}
         activeColor={activeBlock?.color || doc.primaryColor}
         onColorChange={handleColorChange}
@@ -870,44 +1205,73 @@ export default function App() {
           setIsSealModalOpen(true);
         }}
         onOpenTableModal={() => setIsTableModalOpen(true)}
-        onInsertList={() => handleAddBlock('list')}
-        onInsertDivider={() => handleAddBlock('divider')}
+        onInsertParagraph={() => handleAddBlock('paragraph', activeBlockId || undefined)}
+        onInsertList={(style) => handleAddBlock('list', activeBlockId || undefined, null, style)}
+        onInsertDivider={() => handleAddBlock('divider', activeBlockId || undefined)}
         onInsertImage={handleInsertImageFromToolbar}
         onToggleEmphasisDots={handleToggleEmphasisDots}
         hasEmphasisDots={!!activeBlock?.hasEmphasisDots}
         activeBlockType={activeBlock?.type}
         activeListStyle={activeBlock?.listData?.style}
         onListStyleChange={(style) => {
-          if (activeBlockId && activeBlock?.listData) {
-            handleUpdateBlock(activeBlockId, {
-              listData: { ...activeBlock.listData, style },
-            });
+          if (activeBlockId) {
+            handleUpdateBlock(activeBlockId, (prevBlock) =>
+              prevBlock.listData
+                ? { listData: { ...prevBlock.listData, style } }
+                : {}
+            );
           }
         }}
+        isKorean={isKoreanDocument(doc)}
         canUndo={history.length > 0}
         onUndo={handleUndo}
         canRedo={future.length > 0}
         onRedo={handleRedo}
         canDelete={!!activeBlockId}
         onDeleteActiveBlock={handleDeleteActiveBlock}
+        onMoveActiveBlock={(dir) => activeBlockId && handleMoveBlock(activeBlockId, dir)}
+        onDuplicateActiveBlock={() => activeBlockId && handleDuplicateBlock(activeBlockId)}
         onClearSheet={() => setIsClearSheetModalOpen(true)}
         onOpenSettings={() => setIsDocSettingsOpen(true)}
         onAlignTextToGrid={handleAlignTextToPaperGrid}
         activeBlockId={activeBlockId}
         onUpdateBlockContent={(id, html) => handleUpdateBlock(id, { content: html })}
+        selectionStyle={selectionStyle}
       />
 
       {/* Main Workspace Canvas */}
-      <div className="flex-1 flex overflow-hidden relative">
+      <div className="workspace-container flex-1 flex overflow-hidden relative">
         <DocumentPaper
           document={doc}
           activeBlockId={activeBlockId}
-          onSelectBlock={(id) => setActiveBlockId(id)}
+          activePageId={activePageId}
+          onSelectBlock={(id, pageId) => {
+            setActiveBlockId(id);
+            if (pageId) setActivePageId(pageId);
+          }}
+          onSelectPage={(pageId) => {
+            setActivePageId(pageId);
+            setActiveBlockId((prevId) => {
+              const page = doc.pages.find((p) => p.id === pageId);
+              if (!page) return prevId;
+              // Preserve prevId if it belongs to this page or was just inserted on it
+              const belongsToAnotherPage = doc.pages.some(
+                (p) => p.id !== pageId && p.blocks.some((b) => b.id === prevId)
+              );
+              if (!belongsToAnotherPage && prevId) return prevId;
+              return page.blocks[page.blocks.length - 1]?.id || null;
+            });
+          }}
           onUpdateBlock={handleUpdateBlock}
           onDeleteBlock={handleDeleteBlock}
           onMoveBlock={handleMoveBlock}
           onDuplicateBlock={handleDuplicateBlock}
           onAddBlockAfter={(afterId, type) => handleAddBlock(type, afterId)}
+          onAddBlockOnPage={(pageId, type) => handleAddBlock(type, undefined, pageId)}
+          onOpenAddMenuOnPage={(pageId) => {
+            setAddBlockTargetPageId(pageId);
+            setIsAddBlockOpen(true);
+          }}
           onEditSeal={handleEditSeal}
           onEditImage={handleEditImage}
           onOpenRubyModal={() => setIsRubyModalOpen(true)}
@@ -920,6 +1284,7 @@ export default function App() {
           onAlignTextToGrid={handleAlignTextToPaperGrid}
           onOpenPageSettings={() => setIsDocSettingsOpen(true)}
           showMarginGuides={isDocSettingsOpen && showMarginGuides}
+          selectionStyle={selectionStyle}
         />
       </div>
 
@@ -1035,8 +1400,18 @@ export default function App() {
 
       <AddBlockModal
         isOpen={isAddBlockOpen}
-        onClose={() => setIsAddBlockOpen(false)}
-        onSelectType={(type) => handleAddBlock(type)}
+        onClose={() => {
+          setIsAddBlockOpen(false);
+          setAddBlockTargetPageId(null);
+        }}
+        onSelectType={(type) => {
+          handleAddBlock(
+            type,
+            addBlockTargetPageId ? undefined : activeBlockId || undefined,
+            addBlockTargetPageId
+          );
+          setAddBlockTargetPageId(null);
+        }}
       />
 
       <ImageConfigModal
