@@ -489,7 +489,9 @@ export async function exportDocumentToPdf(
       }
 
       const marginPx = Math.round(marginMm * 3.7795);
-      const liveHeight = Math.max(spec.heightPx, Math.ceil(el.scrollHeight));
+      const isVerticalPage =
+        el.getAttribute('data-writing-mode') === 'vertical-rl' ||
+        !!el.querySelector('.vertical-writing-upright, .vertical-writing-mixed');
 
       // Tag & snapshot all vertical-writing blocks + vertical seal texts BEFORE cloning
       const blockSnapshots = new Map<string, VerticalContainerSnapshot>();
@@ -528,9 +530,8 @@ export async function exportDocumentToPdf(
       try {
         canvas = await html2canvas(el, {
           width: spec.widthPx,
-          height: liveHeight,
           windowWidth: spec.widthPx,
-          windowHeight: liveHeight,
+          windowHeight: spec.heightPx,
           x: 0,
           y: 0,
           scrollX: 0,
@@ -635,6 +636,10 @@ export async function exportDocumentToPdf(
                 const cs = window.getComputedStyle(lc);
                 if (cs.fontFamily) cc.style.fontFamily = cs.fontFamily;
                 if (cs.fontSize) cc.style.fontSize = cs.fontSize;
+                if (cs.fontWeight) cc.style.fontWeight = cs.fontWeight;
+                if (cs.fontStyle) cc.style.fontStyle = cs.fontStyle;
+                if (cs.lineHeight) cc.style.lineHeight = cs.lineHeight;
+                if (cs.letterSpacing) cc.style.letterSpacing = cs.letterSpacing;
                 cc.style.color = getNormalizedColor(cs);
                 if (cs.textAlign) cc.style.textAlign = cs.textAlign;
               }
@@ -681,13 +686,13 @@ export async function exportDocumentToPdf(
             clonedDoc.documentElement.style.padding = '0';
             clonedDoc.documentElement.style.overflow = 'visible';
             clonedDoc.documentElement.style.width = `${spec.widthPx}px`;
-            clonedDoc.documentElement.style.height = `${liveHeight}px`;
+            clonedDoc.documentElement.style.height = 'auto';
 
             clonedDoc.body.style.margin = '0';
             clonedDoc.body.style.padding = '0';
             clonedDoc.body.style.overflow = 'visible';
             clonedDoc.body.style.width = `${spec.widthPx}px`;
-            clonedDoc.body.style.height = `${liveHeight}px`;
+            clonedDoc.body.style.height = 'auto';
             clonedDoc.body.style.backgroundColor = paperBgColor;
             clonedDoc.body.style.display = 'block';
             clonedDoc.body.replaceChildren(clonedPage);
@@ -704,13 +709,55 @@ export async function exportDocumentToPdf(
             clonedPage.style.width = `${spec.widthPx}px`;
             clonedPage.style.maxWidth = `${spec.widthPx}px`;
             clonedPage.style.minWidth = `${spec.widthPx}px`;
-            clonedPage.style.height = `${liveHeight}px`;
-            clonedPage.style.minHeight = `${liveHeight}px`;
+            clonedPage.style.height = 'auto';
+            clonedPage.style.minHeight = `${spec.heightPx}px`;
             clonedPage.style.maxHeight = 'none';
             clonedPage.style.boxSizing = 'border-box';
             clonedPage.style.overflow = 'visible';
             clonedPage.style.backgroundColor = paperBgColor;
             clonedPage.style.padding = `${marginPx}px`;
+
+            // Smart horizontal pagination so blocks/list items don't get cut mid-line across PDF pages
+            if (!isVerticalPage && clonedPage.scrollHeight > spec.heightPx + 16) {
+              const usableHeight = spec.heightPx - marginPx * 2;
+              if (usableHeight > 100) {
+                const pushIfStraddling = (node: HTMLElement) => {
+                  const pageRect = clonedPage.getBoundingClientRect();
+                  const rect = node.getBoundingClientRect();
+                  if (rect.height <= 0 || rect.height > usableHeight) return;
+                  const relTop = rect.top - pageRect.top;
+                  const relBottom = rect.bottom - pageRect.top;
+                  const startPage = Math.floor(relTop / spec.heightPx);
+                  const pageBottomLimit =
+                    (startPage + 1) * spec.heightPx - Math.min(marginPx, 24);
+                  if (relBottom > pageBottomLimit) {
+                    const nextStart = (startPage + 1) * spec.heightPx + marginPx;
+                    const shift = Math.ceil(nextStart - relTop);
+                    if (shift > 0 && shift < spec.heightPx) {
+                      const curMt = parseFloat(window.getComputedStyle(node).marginTop) || 0;
+                      node.style.marginTop = `${curMt + shift}px`;
+                    }
+                  }
+                };
+
+                const printBlocks = Array.from(
+                  clonedPage.querySelectorAll('[data-print-block="true"]')
+                ) as HTMLElement[];
+                for (const pb of printBlocks) {
+                  const r = pb.getBoundingClientRect();
+                  if (r.height <= usableHeight) {
+                    pushIfStraddling(pb);
+                  } else {
+                    const items = Array.from(
+                      pb.querySelectorAll('[data-print-list-item="true"]')
+                    ) as HTMLElement[];
+                    for (const it of items) {
+                      pushIfStraddling(it);
+                    }
+                  }
+                }
+              }
+            }
           },
         });
       } finally {
@@ -719,33 +766,103 @@ export async function exportDocumentToPdf(
         }
       }
 
-      const imgData = canvas.toDataURL('image/png');
+      // Always render at exact 100% page width (NEVER shrink width into centered mini-column!)
+      const scaleFactor = canvas.width / spec.widthPx;
+      const sliceHeightPx = Math.round(canvas.width * (pageHeight / pageWidth));
+      const smallOverflowTolerancePx = Math.round(18 * scaleFactor);
 
-      if (renderedCount > 0) {
-        pdf.addPage(spec.jsPdfFormat, 'portrait');
-      }
+      if (canvas.height <= sliceHeightPx + smallOverflowTolerancePx) {
+        if (renderedCount > 0) {
+          pdf.addPage(spec.jsPdfFormat, 'portrait');
+        }
 
-      // Strictly preserve geometric aspect ratio: NEVER stretch characters
-      const canvasRatio = canvas.width / canvas.height;
-      const targetRatio = pageWidth / pageHeight;
-
-      let drawWidth = pageWidth;
-      let drawHeight = pageHeight;
-      let posX = 0;
-      let posY = 0;
-
-      if (Math.abs(canvasRatio - targetRatio) > 0.002) {
-        if (canvasRatio > targetRatio) {
-          drawHeight = pageWidth / canvasRatio;
-          posY = (pageHeight - drawHeight) / 2;
+        if (canvas.height > sliceHeightPx) {
+          const cropped = document.createElement('canvas');
+          cropped.width = canvas.width;
+          cropped.height = sliceHeightPx;
+          const ctx = cropped.getContext('2d');
+          if (ctx) {
+            ctx.fillStyle = paperBgColor;
+            ctx.fillRect(0, 0, cropped.width, cropped.height);
+            ctx.drawImage(
+              canvas,
+              0,
+              0,
+              canvas.width,
+              sliceHeightPx,
+              0,
+              0,
+              canvas.width,
+              sliceHeightPx
+            );
+            pdf.addImage(
+              cropped.toDataURL('image/png'),
+              'PNG',
+              0,
+              0,
+              pageWidth,
+              pageHeight,
+              undefined,
+              'FAST'
+            );
+          } else {
+            pdf.addImage(
+              canvas.toDataURL('image/png'),
+              'PNG',
+              0,
+              0,
+              pageWidth,
+              pageHeight,
+              undefined,
+              'FAST'
+            );
+          }
         } else {
-          drawWidth = pageHeight * canvasRatio;
-          posX = (pageWidth - drawWidth) / 2;
+          const drawH = Math.min(pageHeight, (canvas.height / canvas.width) * pageWidth);
+          pdf.addImage(
+            canvas.toDataURL('image/png'),
+            'PNG',
+            0,
+            0,
+            pageWidth,
+            drawH,
+            undefined,
+            'FAST'
+          );
+        }
+        renderedCount++;
+      } else {
+        for (let sy = 0; sy < canvas.height; sy += sliceHeightPx) {
+          const remaining = canvas.height - sy;
+          if (sy > 0 && remaining < smallOverflowTolerancePx) {
+            break;
+          }
+          const sh = Math.min(sliceHeightPx, remaining);
+          const sliceCanvas = document.createElement('canvas');
+          sliceCanvas.width = canvas.width;
+          sliceCanvas.height = sliceHeightPx;
+          const ctx = sliceCanvas.getContext('2d');
+          if (ctx) {
+            ctx.fillStyle = paperBgColor;
+            ctx.fillRect(0, 0, sliceCanvas.width, sliceCanvas.height);
+            ctx.drawImage(canvas, 0, sy, canvas.width, sh, 0, 0, canvas.width, sh);
+          }
+          if (renderedCount > 0) {
+            pdf.addPage(spec.jsPdfFormat, 'portrait');
+          }
+          pdf.addImage(
+            sliceCanvas.toDataURL('image/png'),
+            'PNG',
+            0,
+            0,
+            pageWidth,
+            pageHeight,
+            undefined,
+            'FAST'
+          );
+          renderedCount++;
         }
       }
-
-      pdf.addImage(imgData, 'PNG', posX, posY, drawWidth, drawHeight, undefined, 'FAST');
-      renderedCount++;
     }
 
     if (renderedCount === 0) {
@@ -787,6 +904,17 @@ export async function exportDocumentToPdf(
   }
 }
 
-export function printDocumentDirectly(): void {
+export function printDocumentDirectly(format: 'A4' | 'B5' | 'Letter' = 'A4'): void {
+  const key = format.toLowerCase() as 'a4' | 'b5' | 'letter';
+  const spec = FORMAT_SPECS[key] || FORMAT_SPECS.a4;
+
+  let styleEl = document.getElementById('cjk-dynamic-print-page') as HTMLStyleElement | null;
+  if (!styleEl) {
+    styleEl = document.createElement('style');
+    styleEl.id = 'cjk-dynamic-print-page';
+    document.head.appendChild(styleEl);
+  }
+  styleEl.textContent = `@media print { @page { size: ${spec.widthMm}mm ${spec.heightMm}mm; margin: 0; } }`;
+
   window.print();
 }

@@ -1080,7 +1080,7 @@ export default function App() {
 
   // PDF Export Handlers
   const handlePrintPdf = () => {
-    printDocumentDirectly();
+    printDocumentDirectly(doc.paperFormat);
   };
 
   const handleDownloadDirectPdf = async () => {

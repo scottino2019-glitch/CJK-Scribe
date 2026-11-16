@@ -826,7 +826,11 @@ export const DocumentPaper: React.FC<DocumentPaperProps> = ({
                 const markerColor = dominant.color || blockColor;
 
                 return (
-                  <div key={item.id} className="flex items-baseline gap-2.5 group/item">
+                  <div
+                    key={item.id}
+                    data-print-list-item="true"
+                    className="flex items-baseline gap-2.5 group/item"
+                  >
                     <span
                       onClick={(e) => {
                         e.stopPropagation();
@@ -1866,6 +1870,8 @@ export const DocumentPaper: React.FC<DocumentPaperProps> = ({
           >
             <div
               id={pageElId}
+              data-writing-mode={doc.writingMode}
+              data-paper-format={doc.paperFormat}
               onClick={() => onSelectPage?.(page.id)}
               style={{
                 width: `${pageDim.width}px`,
@@ -1874,6 +1880,15 @@ export const DocumentPaper: React.FC<DocumentPaperProps> = ({
                 backgroundColor: paperBgHex,
                 padding: `${doc.marginMm}mm`,
                 boxSizing: 'border-box',
+                ...({
+                  '--cjk-print-height':
+                    doc.paperFormat === 'B5'
+                      ? '250mm'
+                      : doc.paperFormat === 'Letter'
+                      ? '279.4mm'
+                      : '297mm',
+                  '--cjk-print-margin-y': `${doc.marginMm * 2}mm`,
+                } as React.CSSProperties),
               }}
               className={`print-page shadow-xl border transition-all relative flex flex-col justify-between shrink-0 ${
                 doc.pages.length > 1 && isPageActive
@@ -1915,7 +1930,7 @@ export const DocumentPaper: React.FC<DocumentPaperProps> = ({
 
               {/* Main Content Area & Synced Grid Pattern */}
               <div
-                className="relative flex-1 w-full min-h-[500px] flex flex-col"
+                className="print-page-inner relative flex-1 w-full min-h-[500px] flex flex-col"
                 onClick={handlePageAreaClick}
               >
                 {/* Grid / Ruled Lines Overlay strictly bounded within the content container */}
@@ -1978,6 +1993,7 @@ export const DocumentPaper: React.FC<DocumentPaperProps> = ({
                     return (
                       <div
                         key={block.id}
+                        data-print-block="true"
                         onClick={(e) => {
                           e.stopPropagation();
                           onSelectBlock(block.id, page.id);
