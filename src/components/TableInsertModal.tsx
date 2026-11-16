@@ -13,8 +13,10 @@ export const TableInsertModal: React.FC<TableInsertModalProps> = ({
   onClose,
   onInsertTable,
 }) => {
-  const [rows, setRows] = useState(4);
+  const [rows, setRows] = useState(3);
+  const [rowsText, setRowsText] = useState('3');
   const [cols, setCols] = useState(3);
+  const [colsText, setColsText] = useState('3');
   const [headers, setHeaders] = useState(true);
   const [bordered, setBordered] = useState(true);
   const [compact, setCompact] = useState(false);
@@ -22,11 +24,29 @@ export const TableInsertModal: React.FC<TableInsertModalProps> = ({
 
   if (!isOpen) return null;
 
+  const updateRows = (val: number) => {
+    const clamped = Math.max(1, Math.min(20, val));
+    setRows(clamped);
+    setRowsText(String(clamped));
+  };
+
+  const updateCols = (val: number) => {
+    const clamped = Math.max(1, Math.min(8, val));
+    setCols(clamped);
+    setColsText(String(clamped));
+  };
+
+  const totalRows = headers ? rows + 1 : rows;
+
   const handleCreate = () => {
+    const finalRows = Math.max(1, Math.min(20, parseInt(rowsText, 10) || rows || 1));
+    const finalCols = Math.max(1, Math.min(8, parseInt(colsText, 10) || cols || 1));
+    const actualRowCount = headers ? finalRows + 1 : finalRows;
+
     const cells: TableCell[][] = [];
-    for (let r = 0; r < rows; r++) {
+    for (let r = 0; r < actualRowCount; r++) {
       const rowCells: TableCell[] = [];
-      for (let c = 0; c < cols; c++) {
+      for (let c = 0; c < finalCols; c++) {
         const isHeader = headers && r === 0;
         let defaultContent = '';
         if (isHeader) {
@@ -47,8 +67,8 @@ export const TableInsertModal: React.FC<TableInsertModalProps> = ({
     }
 
     onInsertTable({
-      rows,
-      cols,
+      rows: actualRowCount,
+      cols: finalCols,
       headers,
       cells,
       bordered,
@@ -69,6 +89,7 @@ export const TableInsertModal: React.FC<TableInsertModalProps> = ({
             </h3>
           </div>
           <button
+            type="button"
             onClick={onClose}
             className="p-1 rounded text-stone-400 hover:text-stone-700 hover:bg-stone-200"
           >
@@ -80,31 +101,85 @@ export const TableInsertModal: React.FC<TableInsertModalProps> = ({
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-xs font-semibold text-stone-700 mb-1">
-                Righe
+                {headers ? 'Righe dati' : 'Righe'}
               </label>
-              <input
-                type="number"
-                min={1}
-                max={20}
-                value={rows}
-                onChange={(e) => setRows(Math.max(1, parseInt(e.target.value) || 1))}
-                className="w-full px-3 py-1.5 border border-stone-300 rounded text-sm focus:outline-none focus:ring-1 focus:ring-amber-700"
-              />
+              <div className="flex items-center border border-stone-300 rounded overflow-hidden">
+                <button
+                  type="button"
+                  onClick={() => updateRows(rows - 1)}
+                  className="px-2.5 py-1.5 bg-stone-50 hover:bg-stone-100 text-stone-700 text-sm font-bold border-r border-stone-200"
+                >
+                  -
+                </button>
+                <input
+                  type="number"
+                  min={1}
+                  max={20}
+                  value={rowsText}
+                  onChange={(e) => {
+                    const raw = e.target.value;
+                    setRowsText(raw);
+                    const parsed = parseInt(raw, 10);
+                    if (!Number.isNaN(parsed)) {
+                      setRows(Math.max(1, Math.min(20, parsed)));
+                    }
+                  }}
+                  onBlur={() => updateRows(parseInt(rowsText, 10) || 1)}
+                  className="w-full px-2 py-1.5 text-center text-sm focus:outline-none"
+                />
+                <button
+                  type="button"
+                  onClick={() => updateRows(rows + 1)}
+                  className="px-2.5 py-1.5 bg-stone-50 hover:bg-stone-100 text-stone-700 text-sm font-bold border-l border-stone-200"
+                >
+                  +
+                </button>
+              </div>
             </div>
             <div>
               <label className="block text-xs font-semibold text-stone-700 mb-1">
                 Colonne
               </label>
-              <input
-                type="number"
-                min={1}
-                max={8}
-                value={cols}
-                onChange={(e) => setCols(Math.max(1, parseInt(e.target.value) || 1))}
-                className="w-full px-3 py-1.5 border border-stone-300 rounded text-sm focus:outline-none focus:ring-1 focus:ring-amber-700"
-              />
+              <div className="flex items-center border border-stone-300 rounded overflow-hidden">
+                <button
+                  type="button"
+                  onClick={() => updateCols(cols - 1)}
+                  className="px-2.5 py-1.5 bg-stone-50 hover:bg-stone-100 text-stone-700 text-sm font-bold border-r border-stone-200"
+                >
+                  -
+                </button>
+                <input
+                  type="number"
+                  min={1}
+                  max={8}
+                  value={colsText}
+                  onChange={(e) => {
+                    const raw = e.target.value;
+                    setColsText(raw);
+                    const parsed = parseInt(raw, 10);
+                    if (!Number.isNaN(parsed)) {
+                      setCols(Math.max(1, Math.min(8, parsed)));
+                    }
+                  }}
+                  onBlur={() => updateCols(parseInt(colsText, 10) || 1)}
+                  className="w-full px-2 py-1.5 text-center text-sm focus:outline-none"
+                />
+                <button
+                  type="button"
+                  onClick={() => updateCols(cols + 1)}
+                  className="px-2.5 py-1.5 bg-stone-50 hover:bg-stone-100 text-stone-700 text-sm font-bold border-l border-stone-200"
+                >
+                  +
+                </button>
+              </div>
             </div>
           </div>
+
+          <p className="text-[11px] text-stone-500 bg-stone-50 border border-stone-200/70 rounded px-2.5 py-1.5">
+            {headers
+              ? `Struttura: 1 riga intestazione + ${rows} ${rows === 1 ? 'riga dati' : 'righe dati'} (${totalRows} righe totali × ${cols} colonne)`
+              : `Struttura: ${rows} ${rows === 1 ? 'riga' : 'righe'} × ${cols} colonne`}
+          </p>
 
           <div>
             <label className="block text-xs font-semibold text-stone-700 mb-1">
@@ -136,7 +211,7 @@ export const TableInsertModal: React.FC<TableInsertModalProps> = ({
                 onChange={(e) => setHeaders(e.target.checked)}
                 className="rounded text-amber-800"
               />
-              <span>Includi riga di intestazione</span>
+              <span>Includi riga di intestazione aggiuntiva</span>
             </label>
             <label className="flex items-center gap-2 cursor-pointer">
               <input
@@ -161,12 +236,14 @@ export const TableInsertModal: React.FC<TableInsertModalProps> = ({
 
         <div className="p-4 border-t border-stone-200 bg-stone-50 flex justify-end gap-2">
           <button
+            type="button"
             onClick={onClose}
             className="px-4 py-2 text-xs font-medium text-stone-600 hover:text-stone-900 rounded-md hover:bg-stone-200/60"
           >
             Annulla
           </button>
           <button
+            type="button"
             onClick={handleCreate}
             className="px-4 py-2 text-xs font-medium text-white bg-amber-800 hover:bg-amber-900 rounded-md flex items-center gap-1.5 shadow-sm"
           >

@@ -829,9 +829,10 @@ export const DocumentPaper: React.FC<DocumentPaperProps> = ({
                   <div
                     key={item.id}
                     data-print-list-item="true"
-                    className="flex items-baseline gap-2.5 group/item"
+                    className="flex flex-row flex-nowrap items-baseline gap-2.5 group/item"
                   >
                     <span
+                      data-print-list-marker="true"
                       onClick={(e) => {
                         e.stopPropagation();
                         if (isCheckable) {
@@ -848,7 +849,7 @@ export const DocumentPaper: React.FC<DocumentPaperProps> = ({
                           });
                         }
                       }}
-                      className={`select-none shrink-0 font-semibold min-w-[26px] text-right ${
+                      className={`select-none shrink-0 font-semibold min-w-[26px] text-right whitespace-nowrap ${
                         isCheckable
                           ? 'cursor-pointer text-amber-900 hover:scale-110'
                           : 'text-stone-700'
@@ -903,7 +904,7 @@ export const DocumentPaper: React.FC<DocumentPaperProps> = ({
                         textDecoration: item.checked ? 'line-through' : 'none',
                         opacity: item.checked ? 0.6 : 1,
                       }}
-                      className={`flex-1 outline-none min-h-[1.5em] py-0.5 whitespace-pre-wrap ${
+                      className={`flex-1 min-w-0 outline-none min-h-[1.5em] py-0.5 whitespace-pre-wrap ${
                         block.hasEmphasisDots ? 'cjk-emphasis-dot' : ''
                       }`}
                     />

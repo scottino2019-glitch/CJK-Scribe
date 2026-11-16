@@ -645,6 +645,81 @@ export async function exportDocumentToPdf(
               }
             }
 
+            // Convert flex list rows into explicit 2-cell HTML tables so html2canvas-pro
+            // ALWAYS renders markers side-by-side with item text (never stacked vertically)
+            const liveListRows = Array.from(
+              el.querySelectorAll('[data-print-list-item="true"]')
+            ) as HTMLElement[];
+            const cloneListRows = Array.from(
+              clonedPage.querySelectorAll('[data-print-list-item="true"]')
+            ) as HTMLElement[];
+
+            for (let idx = 0; idx < cloneListRows.length; idx++) {
+              const cloneRow = cloneListRows[idx];
+              const liveRow = liveListRows[idx];
+              const markerEl = cloneRow.querySelector(
+                '[data-print-list-marker="true"], span'
+              ) as HTMLElement | null;
+              const contentEl = cloneRow.querySelector('[data-cell-id]') as HTMLElement | null;
+              if (!markerEl || !contentEl) continue;
+
+              const liveMarkerEl = liveRow?.querySelector(
+                '[data-print-list-marker="true"], span'
+              ) as HTMLElement | null;
+              if (liveMarkerEl) {
+                const mcs = window.getComputedStyle(liveMarkerEl);
+                if (mcs.fontFamily) markerEl.style.fontFamily = mcs.fontFamily;
+                if (mcs.fontSize) markerEl.style.fontSize = mcs.fontSize;
+                if (mcs.fontWeight) markerEl.style.fontWeight = mcs.fontWeight;
+                if (mcs.lineHeight) markerEl.style.lineHeight = mcs.lineHeight;
+                markerEl.style.color = getNormalizedColor(mcs);
+              }
+
+              const rowTable = clonedDoc.createElement('table');
+              rowTable.setAttribute('data-print-list-item', 'true');
+              rowTable.style.width = '100%';
+              rowTable.style.borderCollapse = 'collapse';
+              rowTable.style.border = 'none';
+              rowTable.style.margin = '0 0 6px 0';
+              rowTable.style.padding = '0';
+              rowTable.style.writingMode = 'horizontal-tb';
+
+              const tbody = clonedDoc.createElement('tbody');
+              const tr = clonedDoc.createElement('tr');
+
+              const markerTd = clonedDoc.createElement('td');
+              markerTd.style.width = '1%';
+              markerTd.style.minWidth = '28px';
+              markerTd.style.whiteSpace = 'nowrap';
+              markerTd.style.textAlign = 'right';
+              markerTd.style.verticalAlign = 'baseline';
+              markerTd.style.padding = '2px 10px 2px 0';
+              markerTd.style.border = 'none';
+              markerTd.style.background = 'transparent';
+              markerEl.style.display = 'inline';
+              markerTd.appendChild(markerEl);
+
+              const contentTd = clonedDoc.createElement('td');
+              contentTd.style.width = '99%';
+              contentTd.style.verticalAlign = 'baseline';
+              contentTd.style.padding = '2px 0';
+              contentTd.style.border = 'none';
+              contentTd.style.background = 'transparent';
+              contentEl.style.flex = 'none';
+              contentEl.style.width = '100%';
+              contentEl.style.display = 'block';
+              contentEl.style.margin = '0';
+              contentEl.style.padding = '0';
+              contentTd.appendChild(contentEl);
+
+              tr.appendChild(markerTd);
+              tr.appendChild(contentTd);
+              tbody.appendChild(tr);
+              rowTable.appendChild(tbody);
+
+              cloneRow.replaceWith(rowTable);
+            }
+
             // Convert remaining horizontal <ruby> tags into flex columns so html2canvas renders Pinyin above base chars
             normalizeHorizontalRubyInClone(clonedDoc, clonedPage);
 
